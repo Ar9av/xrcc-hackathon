@@ -7,6 +7,8 @@ A comprehensive guide based on building a WebXR application for Meta Quest 2 wit
 - [Core Concepts](#core-concepts)
 - [WebXR with @react-three/xr](#webxr-with-react-threexr)
 - [Controller Input Handling](#controller-input-handling)
+- [Physics with @react-three/rapier](#physics-with-react-threerapier)
+- [VR Object Interaction](#vr-object-interaction)
 - [Common Issues & Solutions](#common-issues--solutions)
 - [Best Practices](#best-practices)
 - [Development Setup](#development-setup)
@@ -256,6 +258,263 @@ function PlayerRig() {
 
 ---
 
+## Physics with @react-three/rapier
+
+### Setup
+
+**Installation:**
+```bash
+npm install @react-three/rapier
+```
+
+**Basic Setup:**
+```tsx
+import { Physics, RigidBody } from '@react-three/rapier'
+
+function Scene() {
+  return (
+    <Physics gravity={[0, -9.81, 0]}>
+      {/* Physics-enabled objects */}
+    </Physics>
+  )
+}
+```
+
+### Rigid Body Types
+
+**Fixed (Static):**
+- Immovable objects (walls, floors, obstacles)
+- Other objects collide with them but they don't move
+```tsx
+<RigidBody type="fixed" position={[0, 0, 0]}>
+  <Box />
+</RigidBody>
+```
+
+**Dynamic:**
+- Fully physics-simulated objects
+- Affected by gravity, forces, and collisions
+```tsx
+<RigidBody type="dynamic" colliders="ball" mass={0.5} restitution={0.5}>
+  <Sphere />
+</RigidBody>
+```
+
+**Kinematic Position:**
+- Can be moved programmatically but not affected by physics
+- Other dynamic objects collide with them
+- **Critical:** Velocity commands (`setLinvel`) are **ignored** in kinematic mode
+```tsx
+<RigidBody type="kinematicPosition">
+  <Box />
+</RigidBody>
+```
+
+### Common Properties
+
+```tsx
+<RigidBody
+  type="dynamic"
+  position={[0, 1, 0]}
+  colliders="ball"        // Auto-generate collider: "ball", "cuboid", "hull"
+  mass={0.5}              // Object mass in kg
+  restitution={0.5}       // Bounciness (0 = no bounce, 1 = perfect bounce)
+  friction={0.7}          // Surface friction
+  linearDamping={0.1}     // Air resistance for linear motion
+  angularDamping={0.1}    // Air resistance for rotation
+>
+  <mesh />
+</RigidBody>
+```
+
+### Applying Forces and Velocity
+
+```tsx
+import { RapierRigidBody } from '@react-three/rapier'
+
+const rigidBodyRef = useRef<RapierRigidBody>(null)
+
+// Set velocity directly
+rigidBodyRef.current?.setLinvel({ x: 5, y: 0, z: -2 }, true)
+
+// Apply impulse (one-time force)
+rigidBodyRef.current?.applyImpulse({ x: 0, y: 10, z: 0 }, true)
+
+// Set position (for kinematic bodies)
+rigidBodyRef.current?.setTranslation({ x: 1, y: 2, z: 3 }, true)
+```
+
+---
+
+## VR Object Interaction
+
+### Controller World Position
+
+**❌ Wrong - Returns (0,0,0):**
+```tsx
+const controllerPos = controller.object.position.clone()
+```
+
+**✅ Correct - Returns actual world position:**
+```tsx
+const controllerPos = new THREE.Vector3()
+controller.object.getWorldPosition(controllerPos)
+```
+
+**Why:** Controllers are children of XROrigin. `.position` gives local position relative to parent (always origin). `getWorldPosition()` accounts for the entire transform hierarchy.
+
+### Grab Mechanics Pattern
+
+**Basic Distance-Based Grabbing:**
+```tsx
+function attemptGrab(controllerPos: THREE.Vector3) {
+  const GRAB_DISTANCE = 0.5
+  let closestObject = null
+  let closestDistance = Infinity
+
+  for (const obj of objects) {
+    const objPos = obj.rigidBodyRef.current?.translation()
+    if (!objPos) continue
+
+    const distance = controllerPos.distanceTo(
+      new THREE.Vector3(objPos.x, objPos.y, objPos.z)
+    )
+
+    if (distance <= GRAB_DISTANCE && distance < closestDistance) {
+      closestObject = obj
+      closestDistance = distance
+    }
+  }
+
+  if (closestObject) {
+    // Grab the object
+  }
+}
+```
+
+### Kinematic vs Dynamic State Transitions
+
+**Problem:** Applying velocity while object is kinematic doesn't work.
+
+**Solution:** Use pending velocity pattern:
+
+```tsx
+interface GrabbableObject {
+  isGrabbed: boolean
+  pendingVelocity: THREE.Vector3 | null
+}
+
+// In component:
+function GrabbableObject({ isGrabbed, pendingVelocity, rigidBodyRef }) {
+  const wasGrabbed = useRef(false)
+
+  useFrame(() => {
+    // Apply velocity AFTER switching to dynamic mode
+    if (!isGrabbed && wasGrabbed.current && pendingVelocity && rigidBodyRef.current) {
+      rigidBodyRef.current.setLinvel(pendingVelocity, true)
+    }
+    wasGrabbed.current = isGrabbed
+  })
+
+  return (
+    <RigidBody
+      ref={rigidBodyRef}
+      type={isGrabbed ? 'kinematicPosition' : 'dynamic'}
+    >
+      {/* mesh */}
+    </RigidBody>
+  )
+}
+```
+
+**Why this works:**
+1. Object is kinematic while grabbed → velocity ignored
+2. State updates → object becomes dynamic
+3. Next frame → `useFrame` detects state change and applies velocity
+4. Object now responds to velocity correctly
+
+### Velocity Tracking for Throwing
+
+**Frame-Rate Independent Tracking:**
+```tsx
+const velocityHistory = useRef<THREE.Vector3[]>([])
+const lastFrameTime = useRef(performance.now())
+const previousPosition = useRef<THREE.Vector3 | null>(null)
+
+useFrame(() => {
+  const currentTime = performance.now()
+  const deltaTime = (currentTime - lastFrameTime.current) / 1000
+
+  if (previousPosition.current && deltaTime > 0) {
+    const velocity = controllerPos
+      .clone()
+      .sub(previousPosition.current)
+      .divideScalar(deltaTime)
+
+    velocityHistory.current.push(velocity)
+    if (velocityHistory.current.length > 5) {
+      velocityHistory.current.shift()
+    }
+  }
+
+  previousPosition.current = controllerPos.clone()
+  lastFrameTime.current = currentTime
+})
+```
+
+**Calculate Throw Velocity:**
+```tsx
+function calculateThrowVelocity(history: THREE.Vector3[]): THREE.Vector3 {
+  if (history.length === 0) return new THREE.Vector3()
+
+  // Simple average
+  const avgVelocity = new THREE.Vector3()
+  for (const vel of history) {
+    avgVelocity.add(vel)
+  }
+  avgVelocity.divideScalar(history.length)
+
+  // Apply multiplier for better feel
+  return avgVelocity.multiplyScalar(3.0)
+}
+```
+
+**Key Parameters:**
+- History size: 5 frames (responsive) vs 10 frames (smooth)
+- Throw multiplier: Start at 3.0, adjust for feel
+- Only track velocity while object is held
+
+### Button State Detection
+
+```tsx
+const controller = useXRInputSourceState('controller', hand)
+const previousButtonState = useRef(false)
+
+useFrame(() => {
+  const button = controller?.gamepad?.['xr-standard-squeeze']
+  const isPressed = button?.state === 'pressed'
+
+  // Detect button down (just pressed)
+  if (isPressed && !previousButtonState.current) {
+    onButtonDown()
+  }
+
+  // Detect button up (just released)
+  if (!isPressed && previousButtonState.current) {
+    onButtonUp()
+  }
+
+  previousButtonState.current = isPressed
+})
+```
+
+**Available Buttons:**
+- `'xr-standard-trigger'` - Index trigger
+- `'xr-standard-squeeze'` - Grip button
+- `'xr-standard-thumbstick'` - Thumbstick (has xAxis, yAxis)
+
+---
+
 ## Common Issues & Solutions
 
 ### Issue 1: Multiple Three.js Instances
@@ -365,6 +624,33 @@ import { OrbitControls } from '@react-three/drei'
 <OrbitControls /> {/* Only active when not in XR */}
 ```
 
+### 6. Physics Performance
+- Limit dynamic rigid bodies (20-30 max for 90fps VR)
+- Use automatic colliders when possible
+- Fixed bodies are cheaper than dynamic
+- Disable physics debug mode in production
+
+### 7. Kinematic Body State Management
+Never apply velocity to kinematic bodies:
+```tsx
+// ✗ Wrong - velocity ignored
+rigidBody.setLinvel(velocity, true)  // While type="kinematicPosition"
+
+// ✓ Correct - use pending velocity pattern
+// Store velocity, switch to dynamic, then apply in useFrame
+```
+
+### 8. Controller Position Tracking
+Always use `getWorldPosition()` for controllers:
+```tsx
+// ✗ Wrong
+const pos = controller.object.position.clone()  // Returns (0,0,0)
+
+// ✓ Correct
+const pos = new THREE.Vector3()
+controller.object.getWorldPosition(pos)
+```
+
 ---
 
 ## Development Setup
@@ -451,11 +737,14 @@ export default defineConfig({
 
 1. ✅ Use `useXRInputSourceState` for controller input, not raw WebXR API
 2. ✅ Move `XROrigin`, not the camera, for VR locomotion
-3. ✅ Add `resolve.dedupe` to Vite config to avoid Three.js conflicts
-4. ✅ Use HTTPS (basicSsl plugin) for WebXR on physical devices
-5. ✅ Implement dead zones (0.1) for thumbstick input
-6. ✅ Use refs for frequently updated values, not state
-7. ✅ Keep movement horizontal by setting `y = 0` in direction vectors
+3. ✅ Use `getWorldPosition()` for controller tracking, not `.position`
+4. ✅ Use pending velocity pattern for kinematic→dynamic transitions
+5. ✅ Add `resolve.dedupe` to Vite config to avoid Three.js conflicts
+6. ✅ Use HTTPS (basicSsl plugin) for WebXR on physical devices
+7. ✅ Implement dead zones (0.1) for thumbstick input
+8. ✅ Use refs for frequently updated values, not state
+9. ✅ Keep movement horizontal by setting `y = 0` in direction vectors
+10. ✅ Track velocity frame-rate independently using `performance.now()`
 
 **Common Pattern:**
 ```tsx

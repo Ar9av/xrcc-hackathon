@@ -15,6 +15,7 @@ The objective of this project is to build basic features to explore and understa
 - I want to bring in my room context into the AR experience. This means the walls, floor, furniture etc should be understood by the app
 - I think meta supports this but I will need your guidance on what set up is needed in the headset like spaces and boundary (if any set up is required)
 - The goal is that the balls created in previous feature should interact with objects in the room like walls and furniture when thrown
+- The floor of the experience should also align with the floor in my room. Currently the floor position is not correctly aligned in AR mode and the floor covers the physical objects in my room
 
 ## Feature 3 - New object creation and object  palette
 

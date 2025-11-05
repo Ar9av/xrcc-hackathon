@@ -375,22 +375,42 @@ function GrabController({ hand, balls }) {
 
 #### Velocity Calculation
 
+**Frame-Rate Independent Velocity Tracking:**
+```tsx
+const lastFrameTime = useRef<number>(performance.now())
+
+useFrame(() => {
+  // ... controller position code ...
+
+  const currentTime = performance.now()
+  const deltaTime = (currentTime - lastFrameTime.current) / 1000 // Convert to seconds
+
+  if (previousPosition.current && deltaTime > 0) {
+    const velocity = controllerPos.clone().sub(previousPosition.current).divideScalar(deltaTime)
+    velocityHistory.current.push(velocity)
+    if (velocityHistory.current.length > VELOCITY_HISTORY_SIZE) {
+      velocityHistory.current.shift()
+    }
+  }
+
+  previousPosition.current = controllerPos.clone()
+  lastFrameTime.current = currentTime
+})
+```
+
+**Throw Velocity Calculation:**
 ```tsx
 function calculateThrowVelocity(velocityHistory: THREE.Vector3[]): THREE.Vector3 {
   if (velocityHistory.length === 0) return new THREE.Vector3()
 
-  // Use exponential moving average (EMA) for smoother velocity
-  let ema = velocityHistory[0].clone()
-  const alpha = 0.3 // Smoothing factor
-
-  for (let i = 1; i < velocityHistory.length; i++) {
-    ema.lerp(velocityHistory[i], alpha)
+  // Use simple average for responsive throws
+  const avgVelocity = new THREE.Vector3()
+  for (const vel of velocityHistory) {
+    avgVelocity.add(vel)
   }
+  avgVelocity.divideScalar(velocityHistory.length)
 
-  // Scale factor for better throwing feel (tunable)
-  const throwMultiplier = 1.5
-
-  return ema.multiplyScalar(throwMultiplier)
+  return avgVelocity.multiplyScalar(THROW_MULTIPLIER)
 }
 
 function releaseGrab(hand, balls, velocityHistory) {
@@ -445,8 +465,8 @@ npm install @react-three/rapier
 
 ### Step 2: Wrap Scene in Physics
 - Add `<Physics>` component to Scene
-- Enable `debug` mode initially to visualize colliders
 - Set gravity to `[0, -9.81, 0]`
+- Optional: Enable `debug` mode to visualize colliders (disable before final)
 
 ### Step 3: Convert Cubes to Fixed RigidBodies
 - Wrap each existing `<Box>` with `<RigidBody type="fixed">`
@@ -454,28 +474,32 @@ npm install @react-three/rapier
 - Wrap ground plane in fixed RigidBody
 
 ### Step 4: Add Dynamic Balls
-- Create `Ball` component with dynamic RigidBody
-- Add 3-5 balls at various positions in the scene
+- Create `GrabbableBall` component with dynamic RigidBody
+- Position balls close and at reachable height:
+  - `[0.5, 1.0, -1.5]`, `[-0.5, 1.0, -1.5]`, `[0, 1.2, -1.0]`
 - Test basic physics (falling, bouncing)
 
 ### Step 5: Implement Grab Detection
 - Create `GrabbableBall` component with grab state
 - Create `GrabController` component for each hand
-- Implement grip button detection using existing controller input pattern
-- Add distance-based grab detection
+- **CRITICAL:** Use `getWorldPosition()` NOT `.position.clone()`
+- Implement grip button detection using `controller.gamepad['xr-standard-squeeze']`
+- Add distance-based grab detection (0.5 units recommended)
+- Optional: Add debug spheres to visualize controller positions
 
 ### Step 6: Implement Throw Mechanics
-- Add controller velocity tracking
-- Implement velocity history buffer
-- Calculate and apply throw velocity on release
+- Add frame-rate independent velocity tracking using `performance.now()`
+- Implement velocity history buffer (5 frames)
+- Calculate average velocity on release
+- Apply velocity with multiplier (start at 3.0)
 - Tune multipliers for good feel
 
 ### Step 7: Polish
 - Adjust physics parameters (restitution, friction, mass)
-- Tune throw velocity scaling
+- Tune throw velocity scaling based on testing
 - Add visual feedback (color change when grabbed)
-- Remove debug mode
-- Test in VR headset
+- Remove debug mode and console logs
+- Test thoroughly in VR headset
 
 ---
 
@@ -572,12 +596,11 @@ const BALL_RESTITUTION = 0.5  // Bounciness
 const BALL_FRICTION = 0.7
 
 // Grab detection
-const GRAB_DISTANCE = 0.3  // Max distance to grab
+const GRAB_DISTANCE = 0.5  // Max distance to grab (0.3 is too small, 0.5 recommended)
 
 // Throw mechanics
-const VELOCITY_HISTORY_SIZE = 10  // Frames to average
-const THROW_MULTIPLIER = 1.5      // Velocity scaling
-const VELOCITY_SMOOTHING = 0.3    // EMA alpha
+const VELOCITY_HISTORY_SIZE = 5   // Frames to average (5 for responsive, 10 for smooth)
+const THROW_MULTIPLIER = 3.0      // Velocity scaling (1.5 is too weak, start at 3.0)
 
 // Visual feedback
 const GRABBED_COLOR = "yellow"
@@ -594,26 +617,112 @@ const NORMAL_COLOR = "orange"
 - Recommend max 20-30 dynamic balls for 90fps VR
 - Automatic colliders are efficient (no manual optimization needed)
 
-### WebXR Controller Position
-- Controller position comes from `controller.object.position`
-- This is in world space
-- Needs to be transformed relative to XROrigin if origin moves
+### WebXR Controller Position - CRITICAL IMPLEMENTATION DETAIL
+
+**❌ WRONG APPROACH (Does Not Work):**
+```tsx
+const controllerPos = controller.object.position.clone()
+```
+
+**Problem:** This gives the LOCAL position relative to the controller's parent (XROrigin), which is always at origin (0,0,0) because the controller's local position doesn't change. The debug spheres will appear stuck at world origin.
+
+**✅ CORRECT APPROACH (Works):**
+```tsx
+const controllerPos = new THREE.Vector3()
+controller.object.getWorldPosition(controllerPos)
+```
+
+**Why it works:** `getWorldPosition()` accounts for the entire transform hierarchy including XROrigin movement and properly returns the controller's position in world space. This is essential for grab detection and ball positioning.
+
+**Implementation Note:** This is the single most critical fix for making grab mechanics work. Without it, grab detection will always fail because the controller position will be incorrectly reported as (0,0,0).
 
 ### Physics Timestep
 - Rapier runs at fixed timestep (60Hz by default)
 - Works well with VR's 90Hz or 120Hz refresh rate
 - No manual timestep configuration needed
 
-### Grab Feel
+### Grab Feel and Throw Velocity
+
+**Ball Positioning for Easy Grabbing:**
+- Initial ball positions should be close (1-2 meters in front)
+- Height should be waist/chest level (1.0-1.2 meters)
+- Example positions that work well:
+  - `[0.5, 1.0, -1.5]` - Right side, waist height
+  - `[-0.5, 1.0, -1.5]` - Left side, waist height
+  - `[0, 1.2, -1.0]` - Center, chest height
+
+**Grab Distance:**
+- Default 0.3 units may be too small for comfortable grabbing
+- 0.5 units recommended for easier interaction
+- Can be increased further if needed
+
+**Velocity Tracking:**
 - Velocity multiplier may need tuning per user preference
 - Too high = unrealistic throws
 - Too low = frustrating, weak throws
-- Start at 1.5x and adjust
+- Start at 3.0x and adjust (1.5x is too weak)
+- Use frame-rate independent velocity calculation
+- Average last 5 frames for responsive feel
 
 ### Multi-Hand Grab
 - Current design: one ball per hand max
 - Could be enhanced to allow 2+ balls per hand
 - Would need array of grabbed balls instead of single reference
+
+---
+
+## Implementation Debugging Tips
+
+### Visual Debugging
+When grab mechanics aren't working, add visual debug spheres to show controller positions:
+
+```tsx
+const debugSphereRef = useRef<THREE.Mesh>(null)
+
+// In useFrame:
+if (debugSphereRef.current) {
+  debugSphereRef.current.position.copy(controllerPos)
+}
+
+// Render:
+return (
+  <mesh ref={debugSphereRef}>
+    <sphereGeometry args={[0.08]} />
+    <meshStandardMaterial
+      color={hand === 'left' ? 'blue' : 'red'}
+      emissive={hand === 'left' ? 'blue' : 'red'}
+      emissiveIntensity={0.5}
+    />
+  </mesh>
+)
+```
+
+**If spheres are stuck at origin (0,0,0):** You're using `.position.clone()` instead of `getWorldPosition()`.
+
+### Console Logging
+Add strategic console logs to debug:
+- Button press detection: Log when grip is pressed/released
+- Grab attempts: Log distances between controller and each ball
+- Velocity tracking: Log velocity history on throw
+
+Remove all debug code before final implementation.
+
+### Common Issues and Solutions
+
+**Issue: Balls don't respond to grab**
+- Check: Are you using `getWorldPosition()` for controller position?
+- Check: Is grab distance large enough? (Try 0.5 instead of 0.3)
+- Check: Are balls positioned close enough to reach?
+
+**Issue: Throws are too weak**
+- Increase throw multiplier (try 3.0 or higher)
+- Reduce velocity history size (5 frames vs 10)
+- Use simple average instead of exponential moving average
+- Ensure frame-rate independent velocity calculation
+
+**Issue: Throws in wrong direction**
+- Verify velocity tracking is using world positions
+- Check velocity history is being cleared on grab
 
 ---
 
