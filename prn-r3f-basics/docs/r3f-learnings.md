@@ -182,79 +182,147 @@ function PlayerRig() {
 - Same layout as left controller
 - Commonly used for rotation/turning
 
-### Implementing Smooth Locomotion
+### Implementing Head-Relative Locomotion
+
+**⚠️ IMPORTANT:** For head-relative movement (where forward = direction you're looking), use the built-in `useXRControllerLocomotion` hook instead of manual implementation.
+
+#### The Recommended Way: useXRControllerLocomotion Hook
+
+✅ **Use the official hook** - it handles head-relative movement automatically and correctly:
 
 ```tsx
+import { XROrigin, useXRControllerLocomotion } from '@react-three/xr'
+
 function PlayerRig() {
   const originRef = useRef<THREE.Group>(null)
-  const playerRotation = useRef(0)
 
-  const leftController = useXRInputSourceState('controller', 'left')
-  const rightController = useXRInputSourceState('controller', 'right')
-
-  useFrame((_, delta) => {
-    if (!originRef.current) return
-
-    const moveSpeed = 2.0
-    const rotateSpeed = 1.5
-
-    let moveX = 0, moveZ = 0, rotation = 0
-
-    // Left stick: movement
-    if (leftController?.gamepad) {
-      const stick = leftController.gamepad['xr-standard-thumbstick']
-      if (stick) {
-        moveX = stick.xAxis ?? 0
-        moveZ = -(stick.yAxis ?? 0) // Inverted
-      }
-    }
-
-    // Right stick: rotation
-    if (rightController?.gamepad) {
-      const stick = rightController.gamepad['xr-standard-thumbstick']
-      if (stick) {
-        rotation = stick.xAxis ?? 0
-      }
-    }
-
-    // Apply rotation
-    if (Math.abs(rotation) > 0.1) {
-      playerRotation.current -= rotation * rotateSpeed * delta
-    }
-
-    // Create rotation quaternion
-    const quat = new THREE.Quaternion()
-    quat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), playerRotation.current)
-
-    // Apply movement in rotated direction
-    if (Math.abs(moveZ) > 0.1) {
-      const forward = new THREE.Vector3(0, 0, -1)
-      forward.applyQuaternion(quat)
-      forward.y = 0
-      forward.normalize()
-      originRef.current.position.addScaledVector(forward, moveZ * moveSpeed * delta)
-    }
-
-    if (Math.abs(moveX) > 0.1) {
-      const right = new THREE.Vector3(1, 0, 0)
-      right.applyQuaternion(quat)
-      right.y = 0
-      right.normalize()
-      originRef.current.position.addScaledVector(right, moveX * moveSpeed * delta)
-    }
-
-    originRef.current.rotation.y = playerRotation.current
+  useXRControllerLocomotion(originRef, {
+    translation: {
+      speed: 2.0  // Movement speed in units per second
+    },
+    rotation: {
+      type: 'snap',      // 'snap' or 'smooth'
+      degrees: 45,       // For snap turning: degrees per snap
+      deadZone: 0.1      // Thumbstick dead zone
+    },
+    translationController: 'left'  // Which controller for movement
   })
 
   return <XROrigin ref={originRef} />
 }
 ```
 
-**Key Points:**
-- Dead zone of 0.1 prevents thumbstick drift
-- Rotation applied first, then movement follows the new orientation
-- Keep movement horizontal by setting `y = 0`
+**Why use this hook:**
+- ✅ **Head-relative movement** - Automatically makes forward = where you're looking
+- ✅ **No feedback loops** - Correctly extracts camera orientation without spiraling
+- ✅ **Snap or smooth turning** - Configurable rotation style
+- ✅ **Built-in dead zones** - Prevents thumbstick drift
+- ✅ **Tested and maintained** - Part of @react-three/xr library
+
+#### Configuration Options
+
+**Snap Turning (Recommended for comfort):**
+```tsx
+rotation: {
+  type: 'snap',
+  degrees: 45  // 30 for smaller increments, 90 for quarter turns
+}
+```
+- More comfortable for VR (reduces motion sickness)
+- Default in most VR apps including Meta's experiences
+- Clear discrete rotations
+
+**Smooth Turning:**
+```tsx
+rotation: {
+  type: 'smooth',
+  speed: Math.PI  // Rotation speed in radians/second
+}
+```
+- Continuous rotation based on thumbstick position
+- Can cause motion sickness for some users
+- More control over precise orientation
+
+#### Manual Implementation (Not Recommended)
+
+❌ **Common pitfalls when implementing manually:**
+
+1. **Fixed-Direction Movement** - Moving in world space instead of head-relative:
+   ```tsx
+   // ✗ Wrong - always moves in same direction
+   originRef.current.position.x += thumbstick.xAxis * speed
+   ```
+
+2. **Feedback Loop** - Using camera direction creates spiral movement:
+   ```tsx
+   // ✗ Wrong - camera direction changes as you move, creating spiral
+   const direction = new THREE.Vector3()
+   camera.getWorldDirection(direction)
+   originRef.current.position.add(direction)
+   ```
+
+3. **Incorrect Camera Quaternion Extraction** - Can cause jittery movement:
+   ```tsx
+   // ✗ Wrong - includes pitch/roll which shouldn't affect horizontal movement
+   const quat = camera.getWorldQuaternion(new THREE.Quaternion())
+   direction.applyQuaternion(quat)
+   ```
+
+**If you must implement manually**, extract only the yaw (Y-axis rotation):
+
+```tsx
+function PlayerRig() {
+  const originRef = useRef<THREE.Group>(null)
+  const leftController = useXRInputSourceState('controller', 'left')
+
+  useFrame((state, delta) => {
+    if (!originRef.current || !leftController?.gamepad) return
+
+    const stick = leftController.gamepad['xr-standard-thumbstick']
+    if (!stick) return
+
+    const moveX = stick.xAxis ?? 0
+    const moveZ = -(stick.yAxis ?? 0)
+
+    // Extract only Y-axis rotation (yaw) from camera
+    const cameraQuat = state.camera.getWorldQuaternion(new THREE.Quaternion())
+    const euler = new THREE.Euler().setFromQuaternion(cameraQuat, 'YXZ')
+    const headYaw = euler.y
+
+    // Create stable forward and right vectors from yaw only
+    const forward = new THREE.Vector3(
+      Math.sin(headYaw),
+      0,  // Keep horizontal
+      Math.cos(headYaw)
+    ).normalize()
+
+    const right = new THREE.Vector3(
+      Math.cos(headYaw),
+      0,  // Keep horizontal
+      -Math.sin(headYaw)
+    ).normalize()
+
+    // Apply movement with dead zone
+    if (Math.abs(moveZ) > 0.1) {
+      originRef.current.position.addScaledVector(forward, moveZ * 2.0 * delta)
+    }
+    if (Math.abs(moveX) > 0.1) {
+      originRef.current.position.addScaledVector(right, moveX * 2.0 * delta)
+    }
+  })
+
+  return <XROrigin ref={originRef} />
+}
+```
+
+**Key Points for Manual Implementation:**
+- Extract only Y-axis (yaw) rotation using Euler angles with 'YXZ' order
+- Compute direction vectors using trigonometry from yaw angle
+- Set Y component to 0 to keep movement horizontal
 - Use `addScaledVector` for frame-rate independent movement
+- Apply 0.1 dead zone to prevent thumbstick drift
+
+**However:** The `useXRControllerLocomotion` hook does all this correctly and more. Only implement manually if you need custom behavior beyond what the hook provides.
 
 ---
 
@@ -735,19 +803,25 @@ export default defineConfig({
 
 **Key Takeaways:**
 
-1. ✅ Use `useXRInputSourceState` for controller input, not raw WebXR API
-2. ✅ Move `XROrigin`, not the camera, for VR locomotion
-3. ✅ Use `getWorldPosition()` for controller tracking, not `.position`
-4. ✅ Use pending velocity pattern for kinematic→dynamic transitions
-5. ✅ Add `resolve.dedupe` to Vite config to avoid Three.js conflicts
-6. ✅ Use HTTPS (basicSsl plugin) for WebXR on physical devices
-7. ✅ Implement dead zones (0.1) for thumbstick input
-8. ✅ Use refs for frequently updated values, not state
-9. ✅ Keep movement horizontal by setting `y = 0` in direction vectors
-10. ✅ Track velocity frame-rate independently using `performance.now()`
+1. ✅ Use `useXRControllerLocomotion` hook for head-relative locomotion
+2. ✅ Use `useXRInputSourceState` for controller input, not raw WebXR API
+3. ✅ Move `XROrigin`, not the camera, for VR locomotion
+4. ✅ Use `getWorldPosition()` for controller tracking, not `.position`
+5. ✅ Use pending velocity pattern for kinematic→dynamic transitions
+6. ✅ Add `resolve.dedupe` to Vite config to avoid Three.js conflicts
+7. ✅ Use HTTPS (basicSsl plugin) for WebXR on physical devices
+8. ✅ Prefer snap turning over smooth turning for comfort (reduces motion sickness)
+9. ✅ Extract only yaw rotation for manual head-relative movement (not full quaternion)
+10. ✅ Use refs for frequently updated values, not state
+11. ✅ Keep movement horizontal by setting `y = 0` in direction vectors
+12. ✅ Track velocity frame-rate independently using `performance.now()`
 
 **Common Pattern:**
 ```tsx
+import { createXRStore, XR, XROrigin, useXRControllerLocomotion } from '@react-three/xr'
+import { Canvas } from '@react-three/fiber'
+import { OrbitControls } from '@react-three/drei'
+
 const store = createXRStore()
 
 function App() {
@@ -777,12 +851,12 @@ function Scene() {
 
 function PlayerRig() {
   const originRef = useRef<THREE.Group>(null)
-  const leftController = useXRInputSourceState('controller', 'left')
-  const rightController = useXRInputSourceState('controller', 'right')
 
-  useFrame((_, delta) => {
-    // Handle controller input
-    // Move originRef.current
+  // Use official hook for head-relative locomotion
+  useXRControllerLocomotion(originRef, {
+    translation: { speed: 2.0 },
+    rotation: { type: 'snap', degrees: 45 },
+    translationController: 'left'
   })
 
   return <XROrigin ref={originRef} />

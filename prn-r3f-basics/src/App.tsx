@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
-import { XR, createXRStore, useXRInputSourceState, XROrigin } from '@react-three/xr'
+import { XR, createXRStore, useXRInputSourceState, XROrigin, useXRControllerLocomotion } from '@react-three/xr'
 import { OrbitControls, Box, Sphere } from '@react-three/drei'
 import { Physics, RigidBody, RapierRigidBody } from '@react-three/rapier'
 import * as THREE from 'three'
@@ -11,95 +11,27 @@ const store = createXRStore()
 
 /**
  * PlayerRig component handles VR locomotion (movement)
- * This moves the XROrigin based on controller input
- *
- * Uses the proper @react-three/xr API for controller input
+ * Uses the built-in useXRControllerLocomotion hook which handles head-relative movement automatically
  */
 function PlayerRig() {
   // Reference to the XROrigin group - this is what we move for locomotion
   const originRef = useRef<THREE.Group>(null)
 
-  // Store the player's Y-axis rotation (turning left/right)
-  const playerRotation = useRef(0)
-
-  // Get controller states using @react-three/xr hooks
-  // These provide proper access to the gamepad data
-  const leftController = useXRInputSourceState('controller', 'left')
-  const rightController = useXRInputSourceState('controller', 'right')
-
-  // useFrame runs every frame (60fps typically)
-  useFrame((_, delta) => {
-    if (!originRef.current) return
-
-    // Movement and rotation speeds
-    const moveSpeed = 2.0 // units per second
-    const rotateSpeed = 1.5 // radians per second
-
-    // Initialize movement values
-    let moveX = 0 // left/right strafe
-    let moveZ = 0 // forward/backward
-    let rotation = 0 // turning
-
-    /**
-     * Quest 2 Controller Layout:
-     * - Left thumbstick: Movement (forward/back/strafe)
-     * - Right thumbstick: Rotation (smooth turning)
-     */
-
-    // Get left controller thumbstick for movement
-    if (leftController?.gamepad) {
-      const leftThumbstick = leftController.gamepad['xr-standard-thumbstick']
-      if (leftThumbstick) {
-        moveX = leftThumbstick.xAxis ?? 0 // Strafe left/right
-        moveZ = -(leftThumbstick.yAxis ?? 0) // Forward/backward (inverted)
-      }
-    }
-
-    // Get right controller thumbstick for rotation
-    if (rightController?.gamepad) {
-      const rightThumbstick = rightController.gamepad['xr-standard-thumbstick']
-      if (rightThumbstick) {
-        rotation = rightThumbstick.xAxis ?? 0 // Turn left/right
-      }
-    }
-
-    // Apply rotation first (so movement is in the new direction)
-    if (Math.abs(rotation) > 0.1) { // Dead zone to avoid drift
-      playerRotation.current -= rotation * rotateSpeed * delta
-    }
-
-    // Create a quaternion from our Y-axis rotation
-    const playerQuaternion = new THREE.Quaternion()
-    playerQuaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), playerRotation.current)
-
-    // Apply forward/backward movement
-    if (Math.abs(moveZ) > 0.1) { // Dead zone
-      const direction = new THREE.Vector3(0, 0, -1) // Forward is -Z
-      direction.applyQuaternion(playerQuaternion)
-      direction.y = 0 // Keep horizontal
-      direction.normalize()
-
-      originRef.current.position.addScaledVector(
-        direction,
-        moveZ * moveSpeed * delta
-      )
-    }
-
-    // Apply left/right strafing
-    if (Math.abs(moveX) > 0.1) { // Dead zone
-      const rightDirection = new THREE.Vector3(1, 0, 0) // Right is +X
-      rightDirection.applyQuaternion(playerQuaternion)
-      rightDirection.y = 0
-      rightDirection.normalize()
-
-      originRef.current.position.addScaledVector(
-        rightDirection,
-        moveX * moveSpeed * delta
-      )
-    }
-
-    // Apply rotation to the XROrigin
-    originRef.current.rotation.y = playerRotation.current
+  // Use the official hook for controller-based locomotion
+  // This automatically handles:
+  // - Head-relative movement (forward = where you're looking)
+  // - Snap rotation with right thumbstick (comfortable for VR)
+  // - Proper dead zones
+  useXRControllerLocomotion(originRef, {
+    translation: {
+      speed: 2.0  // Movement speed (units per second)
+    },
+    rotation: {
+      type: 'snap',    // Snap turning (like Meta default) - more comfortable
+      degrees: 45,     // Rotate 45 degrees per snap
+      deadZone: 0.1    // Thumbstick dead zone to prevent drift
+    },
+    translationController: 'left'  // Left controller thumbstick for movement
   })
 
   // Return the XROrigin component - this is the root of the player's coordinate system
