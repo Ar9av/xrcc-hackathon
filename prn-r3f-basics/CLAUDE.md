@@ -34,26 +34,57 @@ npm run preview
 
 The dev server runs on port 5173 with HTTPS enabled (required for WebXR). The server is exposed to the local network for testing on Quest 2 devices.
 
+## Project Structure
+
+### Key Files
+
+- **src/App.tsx** - Main application file containing:
+  - `App` - Root component (XR store, entry buttons, Canvas)
+  - `Scene` - 3D scene (PlayerRig, Physics, GrabbableBalls, environment)
+  - `PlayerRig` - VR locomotion using `useXRControllerLocomotion` hook
+  - `GrabbableBall` - Physics ball with grab/throw mechanics
+  - `GrabController` - Grip button handler for grab/throw
+
+### Key Hooks (from @react-three/xr)
+
+- **useXRControllerLocomotion(originRef, options)**
+  - Purpose: Head-relative movement and rotation
+  - Features: Forward/backward/strafe (left thumbstick), snap rotation (right thumbstick)
+  - Options: `{ speed, rotationSpeed, deadZone }`
+
+- **useXRInputSourceState(type, hand)**
+  - Purpose: Access controller state
+  - Usage: `useXRInputSourceState('controller', 'left'|'right')`
+  - Returns: `gamepad` object with buttons/axes (e.g., `gamepad['xr-standard-squeeze']`)
+
+### Key Interfaces/Types
+
+- **BallData** - Ball state: `{ id, rigidBodyRef, isGrabbed, grabbedBy, pendingVelocity }`
+- **GrabbableBallProps** - Props for grabbable balls
+- **GrabControllerProps** - Props for grab handlers: `{ hand, balls, onGrab, onRelease }`
+
+### Physics Constants (in App.tsx)
+
+```ts
+BALL_RADIUS = 0.3, GRAB_DISTANCE = 0.5, THROW_MULTIPLIER = 1.5
+VELOCITY_HISTORY_SIZE = 5  // For throw velocity calculation
+```
+
 ## Architecture & Key Concepts
 
-### Component Structure
+### Component Hierarchy
 
-- **App.tsx** - Root component containing:
-  - XR store initialization (`createXRStore()`)
-  - Entry buttons for VR/AR sessions
-  - Canvas with XR wrapper
-  - Scene component
-
-- **Scene Component** - Contains all 3D elements:
-  - PlayerRig for locomotion
-  - Lighting setup
-  - 3D objects and environment
-  - OrbitControls for desktop preview
-
-- **PlayerRig Component** - Handles VR locomotion:
-  - Manages XROrigin position/rotation
-  - Processes controller input via `useXRInputSourceState`
-  - Implements smooth locomotion with thumbsticks
+```
+App (XR store, entry buttons)
+└── Canvas → XR → Scene
+    ├── PlayerRig (locomotion with useXRControllerLocomotion)
+    ├── Physics
+    │   ├── GrabbableBall (x3)
+    │   ├── RigidBody cubes (x4)
+    │   └── Ground plane
+    ├── GrabController (left/right hands)
+    └── OrbitControls (desktop preview)
+```
 
 ### Critical WebXR Patterns
 
