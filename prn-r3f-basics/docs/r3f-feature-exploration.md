@@ -10,7 +10,17 @@ The objective of this project is to build basic features to explore and understa
 - Pick up/hold mechanic - this should work when I press the grip button on the left or right controller. I should be able to pick up and throw the balls by doing the throwing action and releasing the grip button.
 - The balls should collide with the cubes bounce naturally with all the
 
-## Feature 2 - New object creation and object  palette
+## Feature 2 - Digital object interaction with physical objects in AR
+
+- I want to bring in my room context into the AR experience. This means the walls, floor, furniture etc should be understood by the app
+- Meta already supports this by allowing you to create “spaces” in the headset in which you specify the structure of your room and objects in the room
+- This space data can be used by applications using plane detection and anchors
+- The goal is that the balls created in previous feature should bounce off the objects in the room like walls and furniture when thrown
+- Meta’s documentation - https://developers.meta.com/horizon/documentation/web/webxr-mixed-reality#plane-detection
+- Similar example implementation which detects the objects/planes in AR has been included in prn-r3f-basics/docs/ar-example.html
+- There is also a need to handle the floor in AR mode. Right now the floor covers the physical room elements, either remove the floor in AR since you can detect the floor plan from the headset or make it transparent (something about this has been mentioned in the meta documentation)
+
+## Feature 3 - New object creation and object  palette
 
 - Goal of this feature is to give the user the ability to open an object palette to select an object and then create new objects in the world
 - The object palette provides two object types
@@ -22,7 +32,7 @@ The objective of this project is to build basic features to explore and understa
 - Selected Object is added to the world by pressing the trigger on the controller when in draw mode. The object is created at the position of the controller on which the trigger is clicked
 - Exit draw mode by pressing X on left controller
 
-## Feature 3 - Object scale, position and rotation change
+## Feature 4 - Object scale, position and rotation change
 
 - In this feature I want to add the ability to change the position, scale and rotation of the created objects
 - Pointing and pressing trigger selects an object
