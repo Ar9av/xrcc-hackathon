@@ -474,3 +474,219 @@ interface XRMesh {
 - [@react-three/xr docs](https://pmndrs.github.io/xr/)
 - [@react-three/rapier docs](https://pmndrs.github.io/react-three-rapier/)
 - [Meta WebXR Mixed Reality](https://developers.meta.com/horizon/documentation/web/webxr-mixed-reality/)
+
+---
+
+## Implementation Summary & Issues (Feature 2)
+
+### Critical Problems Encountered
+
+**1. Mesh Detection Works But Collision Unreliable**
+- ✅ Quest 3 detects 15 meshes (furniture like tables, chairs, couches)
+- ✅ Cyan wireframe overlays visible and aligned with furniture
+- ❌ **Collision extremely unreliable**: Balls sometimes hit, sometimes pass through, sometimes get stuck inside
+- **Root Cause**: Quest 3 meshes are extremely coarse - only 12 triangles per mesh (bounding boxes, not actual geometry)
+- **Attempted Fixes**:
+  - ✅ Enabled CCD (Continuous Collision Detection) - Marginally improved but still unreliable
+  - ✅ Increased ball size (0.15 → 0.18 radius) - No significant improvement
+  - ✅ Added damping (linear/angular 0.3) - Slowed balls but didn't fix collision
+  - ✅ Reduced throw speed (multiplier 3.0 → 2.5) - Still unreliable
+  - ✅ Increased collider thickness (0.01m → 0.1m) - No improvement
+  - **Conclusion**: 12-triangle bounding boxes are fundamentally insufficient for reliable physics
+
+**2. Plane Detection Completely Misaligned**
+- ✅ Planes detected after user configured Room Setup (Settings → Guardian → Mixed Reality)
+- ✅ Multiple planes detected (walls, floor, ceiling)
+- ❌ **Visual overlays completely wrong**: Blue "walls" floating horizontally at neck level, green "floor" on furniture tops, yellow "ceiling" on furniture bottoms
+- ❌ **No collision working** - Balls pass through planes without any collision events
+- **Root Cause**: Unknown - XRSpace coordinate transform appears broken
+- **Attempted Fixes**:
+  - ❌ Manual orientation branching (horizontal vs vertical) - Planes still misaligned
+  - ❌ Different collider orientations based on plane.orientation - Planes still misaligned
+  - ❌ Removed all manual rotations (let XRSpace handle) - Planes still misaligned
+  - ❌ Accessing frame.detectedPlanes directly instead of useXRPlanes() - No difference
+  - **Conclusion**: Fundamental issue with XRSpace coordinate transformation or plane data structure
+
+**3. No Real Floor Detection**
+- ❌ Quest not detecting actual floor as a plane
+- ✅ Detecting furniture tops (tables, couches) as "floor" (semantic label)
+- **Issue**: Room Setup may not include floor, or floor detection is incomplete
+
+### What Currently Works
+
+1. **AR Mode Activation**: Passthrough, session creation, feature detection all functional
+2. **Mesh Detection**: 15 meshes detected and visualized correctly (cyan overlays on furniture)
+3. **Plane Detection**: Planes are detected (walls, ceiling, some furniture) after Room Setup
+4. **Ball Grab/Throw**: Mechanics work properly in AR
+5. **Mode Switching**: VR ↔ AR transitions work, balls reset correctly
+6. **Temporary Floor**: Invisible floor prevents balls from falling indefinitely
+
+### What Doesn't Work
+
+1. **Mesh Collision**: Extremely unreliable despite all optimization attempts
+2. **Plane Colliders**: Completely misaligned, no collision events triggered
+3. **Wall Collision**: Cannot bounce balls off walls (plane colliders broken)
+4. **Floor Collision**: No real floor detected, only furniture tops
+
+### Approaches Attempted & Failed
+
+| Approach | Status | Notes |
+|----------|--------|-------|
+| CuboidCollider for planes | ❌ FAILED | Misaligned regardless of configuration |
+| Manual orientation handling | ❌ FAILED | Tried horizontal/vertical branching, didn't help |
+| XRSpace-only transforms | ❌ FAILED | Removed manual rotations, still misaligned |
+| Thicker colliders (10cm) | ❌ FAILED | Doesn't fix misalignment |
+| CCD on balls | ⚠️ PARTIAL | Slightly improved mesh collision, still unreliable |
+| Larger ball radius | ⚠️ PARTIAL | Marginally reduced tunneling |
+| TrimeshCollider for meshes | ⚠️ PARTIAL | Works for simple hits, fails for complex throws |
+| Direct frame.detectedPlanes access | ❌ NO EFFECT | Same result as useXRPlanes() |
+
+### Outstanding Questions
+
+1. **Why are XRSpace plane transforms wrong?** Planes detected but positioned/oriented incorrectly in world space
+2. **Is @react-three/xr's XRSpace component broken for planes?** Works for meshes but not planes
+3. **Should we use raw WebXR plane data instead?** Bypass @react-three/xr's XRSpace abstraction
+4. **Is Quest 3 mesh geometry always this coarse?** 12 triangles per object seems too simple
+5. **Why no floor plane?** Room Setup complete but floor not in detectedPlanes array
+
+### Potential Next Steps
+
+1. **Bypass @react-three/xr for planes**: Use raw WebXR API with manual matrix transforms
+2. **Simplify collision**: Use simple bounding spheres instead of detailed geometry
+3. **Accept limitations**: Document that AR physics is approximate/unreliable on Quest 3
+4. **Move to Feature 3**: Focus on object creation/manipulation instead of perfect physics
+5. **Research alternative**: Check if other libraries (Babylon.js, A-Frame) have better plane handling
+
+---
+
+### Recommendation
+
+**Feature 2 is BLOCKED by fundamental issues:**
+
+1. **Mesh collision is too unreliable** for meaningful gameplay (12-triangle bounding boxes insufficient)
+2. **Plane collision is completely broken** (XRSpace coordinate transform issue unresolved)
+3. **Significant time investment with diminishing returns** - multiple approaches tried, all failed
+
+**Recommended Path Forward:**
+
+**Option A: Move to Feature 3** ✅ RECOMMENDED
+- Abandon perfect AR physics for now
+- Focus on object creation/manipulation (Feature 3: Object palette, drawing mode)
+- Simpler requirements, more achievable goals
+- Can revisit AR physics later if critical
+
+**Option B: Simplify Feature 2**
+- Keep mesh detection for visualization only
+- Remove all collision attempts
+- Document as "AR object visualization" instead of "AR physics"
+- Set proper expectations about limitations
+
+**Option C: Deep dive into XRSpace issue**
+- Requires extensive debugging of @react-three/xr internals
+- May need to fork library or use raw WebXR API
+- High risk, uncertain reward
+- Only pursue if AR physics is absolutely critical
+
+## Implementation Notes (Feature 2)
+
+### What's Implemented
+
+**XR Store Configuration** (App.tsx:10-13)
+```tsx
+const store = createXRStore({
+  planeDetection: true,  // Quest 2/3
+  meshDetection: true    // Quest 3 only
+})
+```
+
+**AR Components Created** (src/components/ar/)
+- `PhysicsPlanes.tsx` - CuboidCollider from detected planes (Quest 2/3 compatible)
+- `PhysicsMeshes.tsx` - TrimeshCollider from detected meshes (Quest 3 only)
+- `ARPhysics.tsx` - Hybrid selector with temporary invisible floor until planes load
+
+**Scene Conditional Rendering** (App.tsx Scene component)
+- VR-only: PlayerRig locomotion, virtual ground plane, grid helper
+- AR-only: ARPhysics component, temporary floor until plane detection
+- Both modes: Boxes (visible in AR per user requirement), grabbable balls
+
+**Mode Switching** (App.tsx:275-304)
+- Detects VR ↔ AR transitions
+- Resets ball positions/velocities to prevent loss
+- Uses `useXR(state => state.mode)` to detect `'immersive-ar'`
+
+**Ball Positioning for AR** (App.tsx:257-261)
+- Positioned very close (0.5-0.6m away) at shoulder height (1.4-1.5m)
+- Essential since locomotion disabled in AR (user walks in real space)
+
+### Current Status (Updated After Testing)
+
+**✓ Working:**
+- AR mode activates with passthrough
+- Boxes visible and positioned correctly in AR
+- Balls visible and grabbable at chest height
+- Mode switching preserves ball visibility (reset positions)
+- Temporary floor prevents balls from falling before plane detection
+- **Mesh detection working on Quest 3:** 15 meshes detected (furniture like tables, chairs, couches)
+- **Mesh visualization working:** Cyan semi-transparent overlays visible on detected furniture
+- **Session features enabled:** Both `plane-detection` and `mesh-detection` confirmed in session.enabledFeatures
+
+**⚠️ Partially Working:**
+- Mesh colliders sometimes work but balls often pass through (tunneling issue)
+- Fixed with CCD (Continuous Collision Detection) enabled on balls
+
+**✗ Not Working:**
+- **No wall detection:** Quest 3 mesh detection focuses on furniture/obstacles, not large flat walls
+- **Plane detection returns 0 planes:** `useXRPlanes()` returns empty array despite feature being enabled
+- Walls need plane detection to work, but it's not detecting any planes
+
+### Root Cause Analysis
+
+**Why mesh detection works but plane detection doesn't:**
+- Quest 3 prioritizes detecting moveable obstacles (furniture) via meshes
+- Large static surfaces (walls, floor, ceiling) should use plane detection
+- Plane detection requires explicit room setup in Quest settings that may not be configured
+- WebXR plane-detection API may have different activation requirements than mesh-detection
+
+**Why balls pass through meshes:**
+- Physics tunneling: Fast-moving balls pass through thin colliders in a single frame
+- Solution: Enable `ccd={true}` (Continuous Collision Detection) on ball RigidBody
+- Each mesh is simple (12 triangles) - bounding box approximation, not detailed geometry
+
+### Solutions Implemented
+
+1. **CCD enabled on balls** - ⚠️ PARTIALLY EFFECTIVE: Marginally improved mesh collision reliability
+2. **Visual debugging improved** - ✅ WORKING: Solid cyan overlays (40% opacity) correctly show mesh positions
+3. **React key fix** - ✅ WORKING: Unique keys for meshes prevent React duplicate key warnings
+4. **Position logging** - ✅ WORKING: World positions logged to verify coordinate transforms
+5. **Plane detection with initiateRoomCapture** - ✅ WORKING: Planes are detected after room setup
+6. **Plane visual overlays** - ❌ FAILED: Overlays misaligned with actual surfaces despite correct plane data
+
+### Remaining Issues & Next Steps - UPDATED AFTER TESTING
+
+**For plane detection (walls/floor):**
+1. ✅ **Room Setup issue RESOLVED** - Planes ARE detected after user configures room in Settings → Guardian → Mixed Reality
+2. ✅ **Plane data is available** - useXRPlanes() returns multiple planes with correct metadata (semanticLabel, orientation, polygon)
+3. ❌ **CRITICAL BLOCKER: XRSpace coordinate transform is broken** - Visual overlays completely misaligned with actual surfaces
+4. ❌ **No collision events** - Balls pass through plane colliders without triggering collision callbacks
+5. **Attempted fixes ALL FAILED**: Manual rotations, orientation branching, XRSpace-only transforms, direct frame access
+6. **CONCLUSION**: Fundamental issue with @react-three/xr's XRSpace handling for planes, or plane coordinate system misunderstanding
+
+**For mesh collision quality:**
+1. ❌ **CCD did NOT resolve tunneling** - Balls still pass through mesh colliders frequently
+2. ❌ **Increasing mesh limit won't help** - Problem is geometry quality (12 triangles), not quantity
+3. ✅ **Meshes are coarse BY DESIGN** - Quest 3 mesh detection provides bounding boxes for obstacle avoidance, not physics simulation
+4. ⚠️ **HYBRID approach partially implemented** - Meshes visible and occasionally collide, planes visible but misaligned and non-functional
+
+### Web Search Findings
+
+**Key Discovery**: Meta Quest plane detection behaves differently from other AR platforms:
+- **Room Setup Required**: Unlike iOS/Android ARCore that detect planes dynamically, Meta Quest requires users to manually set up their room in advance
+- **Scene Model Storage**: Planes are stored in the device's Scene Model, not detected in real-time during the session
+- **Configuration Path**: Settings → Guardian → Mixed Reality on the Quest headset
+- **initiateRoomCapture()**: API to prompt user to set up room if planes remain empty after session starts
+- **One-time Setup**: Room setup only needs to be done once, then persists across sessions
+
+**References**:
+- [Meta OpenXR Plane Detection Docs](https://docs.unity3d.com/Packages/com.unity.xr.meta-openxr@0.1/manual/plane-detection.html)
+- [WebXR Plane Detection on Quest 3 - Babylon.js Forum](https://forum.babylonjs.com/t/webxr-plane-detection-on-quest-3-passthrough/57422)
+- [Quest Passthrough Blog](https://timmykokke.com/blog/2024/2024-02-07-passthrough/)
