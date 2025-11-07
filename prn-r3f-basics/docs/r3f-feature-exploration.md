@@ -29,6 +29,7 @@ The objective of this project is to build basic features to explore and understa
     - Block - a simple cube
     - Pyramid - a simple pyramid
 - The object palette is opened by pressing the ‘Y’ button on the left controller. Pressing Y again closes the palette
+- The palette appears in front of the user wearing headset. The position can be fixed after it appears. Does not need any dynamic tracking of headset. Position only changes if the palette is closed and re-opened.
 - An object is selected from the palette by pointing with controller and clicking trigger button on the right or left controller. For this pointing we need rays coming out of the controller.
 - Once object is selected, we are in draw mode and the cursor becomes visible for placing the object (cursor should not be visible when not in draw mode)
 - Selected Object is added to the world by pressing the trigger on the controller when in draw mode.

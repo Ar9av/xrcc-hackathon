@@ -1,0 +1,1 @@
+scrcpy -s 1WMHHA68RV2132 --crop 1600:900:2017:510 --record objectplace.mp4
