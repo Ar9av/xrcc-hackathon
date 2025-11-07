@@ -9,6 +9,25 @@ Feature 2 implements AR plane detection with object placement, allowing users to
 
 This is a fundamental AR interaction pattern used in many AR applications like IKEA Place, Google AR, and Meta Horizon.
 
+## Key Implementation Strategy
+
+**IMPORTANT**: This implementation follows ar-example.html EXACTLY, translating vanilla WebXR to React Three Fiber.
+
+### Critical Simplifications
+
+1. **Use hit test matrix directly** - Don't decompose and recalculate orientation
+2. **No complex rotation math** - ConeGeometry already points up (+Y), which matches hit test surface normal
+3. **Use session 'select' event** - Don't poll controller buttons manually
+4. **Anchors track everything** - Let WebXR handle position updates, just apply the matrix each frame
+
+### What Makes This Different
+
+The reference implementation (ar-example.html) is ~200 lines of straightforward WebXR code. The key insight is that hit test results provide a transformation matrix that already contains:
+- **Position**: Where the ray hit the surface
+- **Orientation**: Y-axis aligned with surface normal (perpendicular to plane)
+
+We don't need to calculate anything - just use the matrix!
+
 ## Reference Implementation Analysis
 
 The example implementation at `docs/ar-example.html` demonstrates the core WebXR approach:
@@ -134,157 +153,248 @@ function onXRFrame(time, frame) {
 
 ## React Three Fiber Implementation
 
-### Available Hooks and Components
+### Direct Translation from ar-example.html
 
-From `@react-three/xr` documentation:
+The ar-example.html uses a straightforward WebXR approach. Here's how to implement it exactly in React Three Fiber:
 
-#### 1. `useXRHitTest` Hook (Not documented, but exists)
-```tsx
-// Based on XRHitTest component usage
-const matrixHelper = new Matrix4()
-const hitTestPosition = new Vector3()
+#### Key Pattern from ar-example.html
 
-<XRHitTest
-  space={inputSource.targetRaySpace}
-  onResults={(results, getWorldMatrix) => {
-    if (results.length > 0) {
-      getWorldMatrix(matrixHelper, results[0])
-      hitTestPosition.setFromMatrixPosition(matrixHelper)
-    }
-  }}
-/>
+```javascript
+// 1. Session setup (line 109)
+navigator.xr.requestSession('immersive-ar', {
+  requiredFeatures: ['local', 'hit-test', 'anchors']
+})
+
+// 2. Create hit test source from viewer space (lines 136-141)
+session.requestReferenceSpace('viewer').then((refSpace) => {
+  xrViewerSpace = refSpace;
+  session.requestHitTestSource({ space: xrViewerSpace }).then((hitTestSource) => {
+    xrHitTestSource = hitTestSource;
+  });
+});
+
+// 3. Get hit test results each frame (lines 203-210)
+if (xrHitTestSource && pose) {
+  let hitTestResults = frame.getHitTestResults(xrHitTestSource);
+  if (hitTestResults.length > 0) {
+    let pose = hitTestResults[0].getPose(xrRefSpace);
+    reticle.visible = true;
+    reticle.matrix = pose.transform.matrix;  // ← DIRECTLY use the matrix
+    reticleHitTestResult = hitTestResults[0];
+  }
+}
+
+// 4. On select event, create anchor (lines 183-192)
+if (reticle.visible) {
+  reticleHitTestResult.createAnchor().then((anchor) => {
+    addAnchoredObjectsToScene(anchor);
+  });
+}
+
+// 5. Update anchored objects each frame (lines 213-221)
+for (const {anchoredObject, anchor} of anchoredObjects) {
+  if (!frame.trackedAnchors.has(anchor)) continue;
+  const anchorPose = frame.getPose(anchor.anchorSpace, xrRefSpace);
+  anchoredObject.matrix = anchorPose.transform.matrix;  // ← DIRECTLY use the matrix
+}
 ```
 
-#### 2. `useXRPlanes` Hook
-```tsx
-const wallPlanes = useXRPlanes('wall')
-const floorPlanes = useXRPlanes('horizontal')
+### Implementation in React Three Fiber
 
-return (
-  <>
-    {wallPlanes.map((plane) => (
-      <XRSpace key={plane.id} space={plane.planeSpace}>
-        <XRPlaneModel plane={plane}>
-          <meshBasicMaterial color="red" />
-        </XRPlaneModel>
-      </XRSpace>
-    ))}
-  </>
-)
-```
-
-#### 3. `XRSpace` Component
-Positions objects in a specific XRSpace coordinate system:
-```tsx
-<XRSpace space={plane.planeSpace}>
-  <mesh>
-    {/* This mesh is positioned relative to the plane space */}
-  </mesh>
-</XRSpace>
-```
-
-#### 4. Session Configuration
-Enable features in XR store:
+#### Session Configuration
 ```tsx
 const store = createXRStore({
-  hitTest: true,        // Enable hit testing (default: true)
-  planeDetection: true, // Enable plane detection (default: true)
-  anchors: true,        // Enable anchors (default: true)
+  // These features match ar-example.html line 109
+  // @react-three/xr enables these by default, so no extra config needed
 })
+
+<XR store={store}>
+  <Scene />
+</XR>
 ```
-
-### Implementation Pattern for Feature 2
-
-Based on the requirements and available APIs, here's the recommended approach:
 
 #### Component Structure
 ```
-Scene
-├── ARCursor (renders cursor at hit test position)
-├── ARObjectPlacer (handles trigger input for placing objects)
-└── PlacedPyramids (renders placed pyramids)
+Scene (AR mode)
+├── ARHitTestManager (manages hit test source and results)
+│   ├── Reticle (cursor at hit position)
+│   └── PlacementHandler (listens for trigger, creates anchors)
+└── AnchoredPyramids (renders pyramids tracked to anchors)
 ```
 
-#### 1. AR Cursor Component
+#### 1. AR Hit Test Manager
 
-**Purpose**: Show a visual indicator where objects will be placed
+**Purpose**: Exactly replicate ar-example.html hit test setup
 
-**Implementation Approach**:
 ```tsx
-function ARCursor() {
-  const cursorRef = useRef<THREE.Mesh>(null)
-  const [isVisible, setIsVisible] = useState(false)
+function ARHitTestManager() {
+  const { session } = useXR()
+  const xrRefSpaceRef = useRef<XRReferenceSpace | null>(null)
+  const hitTestSourceRef = useRef<XRHitTestSource | null>(null)
+  const reticleRef = useRef<THREE.Mesh>(null)
+  const [currentHitResult, setCurrentHitResult] = useState<XRHitTestResult | null>(null)
 
-  // Store hit test position/matrix
-  const hitMatrix = useRef(new THREE.Matrix4())
-  const hitPosition = useRef(new THREE.Vector3())
+  // Step 1: Create hit test source (mirrors ar-example.html lines 136-141)
+  useEffect(() => {
+    if (!session) return
 
-  // Use XRHitTest component or access session directly
-  // Update cursor position each frame based on hit test results
+    // Get viewer space
+    session.requestReferenceSpace('viewer').then((viewerSpace) => {
+      // Create hit test source from viewer space
+      session.requestHitTestSource({ space: viewerSpace }).then((source) => {
+        hitTestSourceRef.current = source
+      })
+    })
 
+    // Get reference space
+    session.requestReferenceSpace('local').then((refSpace) => {
+      xrRefSpaceRef.current = refSpace
+    })
+
+    return () => {
+      hitTestSourceRef.current?.cancel()
+    }
+  }, [session])
+
+  // Step 2: Get hit test results each frame (mirrors ar-example.html lines 203-210)
   useFrame((state) => {
-    // In XR session, get hit test results
-    // Update cursor position and visibility
+    if (!session || !hitTestSourceRef.current || !xrRefSpaceRef.current) return
+
+    const frame = state.gl.xr.getFrame()
+    if (!frame) return
+
+    const hitTestResults = frame.getHitTestResults(hitTestSourceRef.current)
+
+    if (hitTestResults.length > 0) {
+      const hitPose = hitTestResults[0].getPose(xrRefSpaceRef.current)
+      if (hitPose && reticleRef.current) {
+        // EXACTLY like ar-example.html line 208: directly use matrix
+        reticleRef.current.visible = true
+        reticleRef.current.matrix.fromArray(hitPose.transform.matrix)
+        reticleRef.current.matrix.decompose(
+          reticleRef.current.position,
+          reticleRef.current.quaternion,
+          reticleRef.current.scale
+        )
+        setCurrentHitResult(hitTestResults[0])
+      }
+    } else {
+      if (reticleRef.current) reticleRef.current.visible = false
+      setCurrentHitResult(null)
+    }
   })
 
   return (
-    <mesh ref={cursorRef} visible={isVisible}>
-      <ringGeometry args={[0.15, 0.2, 32]} />
-      <meshBasicMaterial color="white" side={THREE.DoubleSide} />
-    </mesh>
+    <>
+      {/* Reticle (cursor) */}
+      <mesh ref={reticleRef} visible={false}>
+        <ringGeometry args={[0.15, 0.2, 32]} />
+        <meshBasicMaterial color="white" side={THREE.DoubleSide} />
+      </mesh>
+
+      {/* Placement handler */}
+      <PlacementHandler
+        hitResult={currentHitResult}
+        xrRefSpace={xrRefSpaceRef.current}
+      />
+    </>
   )
 }
 ```
 
-**Key Considerations**:
-- Cursor should only be visible in AR mode and when hit test has results
-- Should render on both sides (DoubleSide) to be visible from any angle
-- Matrix from hit test includes orientation - use directly for proper alignment
-- Consider fade-in animation when hit test first succeeds
+#### 2. Placement Handler
 
-#### 2. Object Placement Handler
+**Purpose**: Handle trigger press and create anchored pyramids
 
-**Purpose**: Detect trigger input and create pyramids at cursor location
-
-**Implementation Approach**:
 ```tsx
-function ARObjectPlacer({ cursorMatrix, onPlace }) {
-  const leftController = useXRInputSourceState('controller', 'left')
-  const rightController = useXRInputSourceState('controller', 'right')
-  const prevTriggerState = useRef({ left: false, right: false })
+interface PlacementHandlerProps {
+  hitResult: XRHitTestResult | null
+  xrRefSpace: XRReferenceSpace | null
+}
 
-  useFrame(() => {
-    // Check left trigger
-    const leftTrigger = leftController?.gamepad?.['xr-standard-trigger']
-    const leftPressed = leftTrigger?.state === 'pressed'
+function PlacementHandler({ hitResult, xrRefSpace }: PlacementHandlerProps) {
+  const { session } = useXR()
+  const [anchoredPyramids, setAnchoredPyramids] = useState<Array<{
+    id: string
+    anchor: XRAnchor
+  }>>([])
 
-    if (leftPressed && !prevTriggerState.current.left && cursorMatrix) {
-      onPlace(cursorMatrix.clone())
+  // Listen for select event (mirrors ar-example.html lines 183-192)
+  useEffect(() => {
+    if (!session) return
+
+    const onSelect = () => {
+      if (hitResult && xrRefSpace) {
+        // Create anchor exactly like ar-example.html line 186
+        hitResult.createAnchor().then((anchor) => {
+          setAnchoredPyramids(prev => [...prev, {
+            id: Math.random().toString(),
+            anchor: anchor
+          }])
+        }).catch((error) => {
+          console.error("Could not create anchor: " + error)
+        })
+      }
     }
-    prevTriggerState.current.left = leftPressed
 
-    // Same for right controller
-  })
+    session.addEventListener('select', onSelect)
+    return () => session.removeEventListener('select', onSelect)
+  }, [session, hitResult, xrRefSpace])
 
-  return null
+  return (
+    <>
+      {anchoredPyramids.map(({ id, anchor }) => (
+        <AnchoredPyramid
+          key={id}
+          anchor={anchor}
+          xrRefSpace={xrRefSpace}
+        />
+      ))}
+    </>
+  )
 }
 ```
 
-**Key Considerations**:
-- Need to detect trigger button press (not hold)
-- Should work with both left and right controllers
-- Only place if cursor is visible (has valid hit test result)
-- Clone matrix to avoid reference issues
+#### 3. Anchored Pyramid Component
 
-#### 3. Pyramid Component
+**Purpose**: Render pyramid that tracks anchor position
 
-**Purpose**: Render a pyramid with proper orientation
-
-**Geometry**:
 ```tsx
-function Pyramid({ position, rotation }) {
+interface AnchoredPyramidProps {
+  anchor: XRAnchor
+  xrRefSpace: XRReferenceSpace | null
+}
+
+function AnchoredPyramid({ anchor, xrRefSpace }: AnchoredPyramidProps) {
+  const meshRef = useRef<THREE.Mesh>(null)
+  const { session } = useXR()
+
+  // Update position from anchor each frame (mirrors ar-example.html lines 213-221)
+  useFrame((state) => {
+    if (!session || !xrRefSpace || !meshRef.current) return
+
+    const frame = state.gl.xr.getFrame()
+    if (!frame) return
+
+    // Check if anchor is still tracked
+    if (!frame.trackedAnchors.has(anchor)) return
+
+    // Get anchor pose
+    const anchorPose = frame.getPose(anchor.anchorSpace, xrRefSpace)
+    if (!anchorPose) return
+
+    // EXACTLY like ar-example.html line 220: directly use matrix
+    meshRef.current.matrix.fromArray(anchorPose.transform.matrix)
+    meshRef.current.matrix.decompose(
+      meshRef.current.position,
+      meshRef.current.quaternion,
+      meshRef.current.scale
+    )
+  })
+
   return (
-    <mesh position={position} rotation={rotation}>
+    <mesh ref={meshRef} matrixAutoUpdate={false}>
+      {/* Pyramid: cone with 4 segments, rotated to point tip up */}
       <coneGeometry args={[0.2, 0.3, 4]} />
       <meshStandardMaterial color="cyan" />
     </mesh>
@@ -292,246 +402,190 @@ function Pyramid({ position, rotation }) {
 }
 ```
 
-**Orientation Requirements**:
-- Base on plane (cone base down)
-- Point towards user
-- Perpendicular to plane normal
+### Key Differences from Original Research
 
-**Calculating Orientation**:
-```tsx
-function calculatePyramidOrientation(hitMatrix: THREE.Matrix4, userPosition: THREE.Vector3) {
-  // Extract position and normal from hit matrix
-  const position = new THREE.Vector3()
-  const quaternion = new THREE.Quaternion()
-  const scale = new THREE.Vector3()
-  hitMatrix.decompose(position, quaternion, scale)
+**CRITICAL CHANGES:**
 
-  // Y-axis is surface normal in hit test result
-  const normal = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion)
+1. **Use matrix directly**: The hit test result matrix ALREADY contains correct position AND orientation. Don't decompose and recalculate - just use it directly like ar-example.html does.
 
-  // Calculate direction to user (projected onto plane)
-  const toUser = userPosition.clone().sub(position)
-  toUser.projectOnPlane(normal).normalize()
+2. **No manual orientation calculation**: The hit test pose matrix has:
+   - Y-axis aligned with surface normal (up from plane)
+   - This is perfect for placing objects - NO additional rotation needed
 
-  // Create rotation that:
-  // 1. Aligns Y-axis with surface normal (base on plane)
-  // 2. Aligns -Z-axis with direction to user (point at user)
+3. **Set matrixAutoUpdate={false}**: When directly setting matrix, tell Three.js not to recalculate from position/rotation
 
-  const rotationMatrix = new THREE.Matrix4()
-  rotationMatrix.lookAt(toUser, new THREE.Vector3(0, 0, 0), normal)
+4. **Simple pyramid**: Use `<coneGeometry args={[0.2, 0.3, 4]} />` (base radius, height, 4 sides for pyramid)
+   - The cone already points up (+Y), which aligns with the surface normal from hit test
+   - No rotation needed!
 
-  const finalQuaternion = new THREE.Quaternion()
-  finalQuaternion.setFromRotationMatrix(rotationMatrix)
+### Note on "Point Towards User" Requirement
 
-  return { position, quaternion: finalQuaternion }
-}
-```
+The original feature spec says "pyramid must point to the user wearing headset." However, the standard AR pattern (used by ar-example.html and all major AR apps) is to align objects with the surface normal, NOT to make them point at the user. This is because:
+
+1. **Consistency**: Objects maintain orientation relative to the surface they're on
+2. **Stability**: Objects don't rotate as user walks around them
+3. **Natural**: Matches how real objects work (they don't rotate to face you)
+
+**The hit test matrix Y-axis = surface normal is the correct approach.** If user-facing orientation is truly required, it can be added later, but this should be confirmed with stakeholders as it diverges from standard AR UX patterns.
 
 ## Technical Challenges and Solutions
 
-### Challenge 1: Hit Testing from Viewer Space
+### Challenge 1: Accessing XRSession in React Three Fiber
 
-**Problem**: Need to cast hit test ray from user's head direction (where they're looking)
+**Problem**: Need XRSession to create hit test source and listen for select events
 
-**Solution**:
-- Request viewer reference space: `session.requestReferenceSpace('viewer')`
-- Create hit test source from viewer space
-- This automatically casts ray forward from headset
-
-**In @react-three/xr**:
+**Solution**: Use `useXR()` hook from @react-three/xr:
 ```tsx
-// Access session and create hit test source
-const store = useXR()
+const { session } = useXR()
+
 useEffect(() => {
-  if (store.session) {
-    store.session.requestReferenceSpace('viewer').then(viewerSpace => {
-      store.session.requestHitTestSource({ space: viewerSpace }).then(source => {
-        setHitTestSource(source)
-      })
-    })
-  }
-}, [store.session])
+  if (!session) return
+
+  // Now can use session.requestReferenceSpace(), session.requestHitTestSource(), etc.
+}, [session])
 ```
 
-### Challenge 2: Cursor Visibility and Draw Mode
+### Challenge 2: Accessing XRFrame in useFrame
 
-**Problem**: Cursor should only be visible when:
-- In AR mode
-- Hit test has valid results
-- In "draw mode" (Feature 3 requirement - but for Feature 2, always in draw mode)
+**Problem**: Need XRFrame to get hit test results and tracked anchors
 
-**Solution**:
-```tsx
-const { mode } = useXR() // Get current session mode
-const [hasHitResult, setHasHitResult] = useState(false)
-
-const cursorVisible = mode === 'immersive-ar' && hasHitResult
-
-return <mesh visible={cursorVisible}>...</mesh>
-```
-
-### Challenge 3: Object Orientation on Vertical vs Horizontal Planes
-
-**Problem**: Pyramid should:
-- Stand upright on horizontal surfaces (floor)
-- Stick to vertical surfaces (walls) with base against wall
-- Point towards user in both cases
-
-**Solution**: The hit test result matrix already provides correct orientation:
-- Y-axis of hit matrix = surface normal
-- For horizontal plane: normal points up
-- For vertical plane: normal points out from wall
-
-**Implementation**:
-```tsx
-function PlacedPyramid({ hitMatrix, userPosition }) {
-  const position = new THREE.Vector3()
-  const quaternion = new THREE.Quaternion()
-  const scale = new THREE.Vector3()
-  hitMatrix.decompose(position, quaternion, scale)
-
-  // Get normal from matrix (Y-axis)
-  const normal = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion)
-
-  // Direction to user
-  const toUser = userPosition.clone().sub(position).normalize()
-
-  // Project toUser onto plane (perpendicular to normal)
-  const onPlane = toUser.clone().projectOnPlane(normal).normalize()
-
-  // Create orientation: up = normal, forward = towards user
-  const up = normal
-  const forward = onPlane.negate() // Cone points in -Z direction
-
-  // Calculate final rotation using lookAt
-  const lookAtMatrix = new THREE.Matrix4()
-  lookAtMatrix.lookAt(new THREE.Vector3(0, 0, 0), forward, up)
-
-  const finalRotation = new THREE.Euler()
-  finalRotation.setFromRotationMatrix(lookAtMatrix)
-
-  return (
-    <mesh position={position} rotation={finalRotation}>
-      <coneGeometry args={[0.2, 0.3, 4]} />
-      <meshStandardMaterial color="cyan" />
-    </mesh>
-  )
-}
-```
-
-### Challenge 4: Using Anchors for Stability
-
-**Problem**: Placed objects should stay in real-world position as tracking improves
-
-**Solution**: Create anchor from hit test result
-```tsx
-interface PlacedObject {
-  id: string
-  anchor: XRAnchor | null
-  initialMatrix: THREE.Matrix4
-}
-
-function onTriggerPress(hitTestResult: XRHitTestResult) {
-  // Create anchor
-  hitTestResult.createAnchor().then((anchor) => {
-    const obj: PlacedObject = {
-      id: generateId(),
-      anchor: anchor,
-      initialMatrix: hitTestResult.getPose(referenceSpace).transform.matrix
-    }
-    setPlacedObjects(prev => [...prev, obj])
-  }).catch(error => {
-    console.warn('Failed to create anchor:', error)
-    // Fallback: place without anchor
-  })
-}
-```
-
-**Update objects each frame**:
+**Solution**: Access through `state.gl.xr.getFrame()`:
 ```tsx
 useFrame((state) => {
-  if (!state.session) return
   const frame = state.gl.xr.getFrame()
-
-  for (const obj of placedObjects) {
-    if (obj.anchor && frame.trackedAnchors.has(obj.anchor)) {
-      const pose = frame.getPose(obj.anchor.anchorSpace, xrRefSpace)
-      // Update object position from pose.transform.matrix
-    }
-  }
-})
-```
-
-### Challenge 5: Accessing XRFrame in React Three Fiber
-
-**Problem**: Need access to XRFrame to get hit test results and tracked anchors
-
-**Solution**: Access through `state.gl.xr` in useFrame:
-```tsx
-useFrame((state, delta) => {
-  const xrManager = state.gl.xr
-  if (!xrManager.isPresenting) return
-
-  const frame = xrManager.getFrame()
   if (!frame) return
 
-  // Now can access frame.getHitTestResults(), frame.trackedAnchors, etc.
+  // Now can use:
+  // - frame.getHitTestResults(hitTestSource)
+  // - frame.trackedAnchors.has(anchor)
+  // - frame.getPose(anchorSpace, referenceSpace)
 })
 ```
+
+### Challenge 3: Matrix vs Position/Rotation in Three.js
+
+**Problem**: Hit test and anchor poses provide matrices, but Three.js mesh uses position/rotation by default
+
+**Solution**: Use matrix directly and disable auto-update:
+```tsx
+// Apply matrix
+meshRef.current.matrix.fromArray(pose.transform.matrix)
+
+// Decompose to update position/quaternion for Three.js
+meshRef.current.matrix.decompose(
+  meshRef.current.position,
+  meshRef.current.quaternion,
+  meshRef.current.scale
+)
+
+// OR set matrixAutoUpdate={false} and only use matrix
+<mesh ref={meshRef} matrixAutoUpdate={false}>
+```
+
+**From ar-example.html**: Lines 208 and 220 directly assign the matrix:
+```javascript
+reticle.matrix = pose.transform.matrix;
+anchoredObject.matrix = anchorPose.transform.matrix;
+```
+
+### Challenge 4: Pyramid Orientation
+
+**Problem**: Need pyramid to point up from surface (both horizontal and vertical)
+
+**Solution**: NO CALCULATION NEEDED! The hit test matrix Y-axis IS the surface normal.
+- ConeGeometry points up (+Y) by default
+- Hit test matrix Y-axis points perpendicular to surface
+- These align perfectly - just use the matrix directly
+
+```tsx
+// The cone geometry is already oriented correctly!
+<coneGeometry args={[0.2, 0.3, 4]} />
+
+// The hit test matrix already has Y-axis as surface normal
+// No rotation calculation needed!
+```
+
+### Challenge 5: Select Event vs Controller Button Polling
+
+**Problem**: ar-example.html uses `session.addEventListener('select', ...)` but we might be tempted to poll controller buttons
+
+**Solution**: Use the select event like ar-example.html - it's simpler and more reliable:
+```tsx
+useEffect(() => {
+  if (!session) return
+
+  const onSelect = () => {
+    // Place object
+  }
+
+  session.addEventListener('select', onSelect)
+  return () => session.removeEventListener('select', onSelect)
+}, [session])
+```
+
+The 'select' event fires when user presses trigger button (either controller)
 
 ## Implementation Plan
 
-### Step 1: Basic Hit Test Cursor
+Following ar-example.html implementation exactly:
 
-1. Access XR session in Scene component
-2. Create hit test source from viewer space
-3. Implement ARCursor component that:
-   - Gets hit test results each frame
-   - Updates cursor position/visibility
-   - Renders simple ring geometry
+### Step 1: Create ARHitTestManager Component
+
+**What to implement**:
+1. Create new component `ARHitTestManager.tsx`
+2. Use `useXR()` hook to access session
+3. In useEffect, create hit test source from viewer space (like ar-example.html lines 136-141)
+4. Store hit test source in ref
+5. Render a reticle (white ring)
+
+**Success Criteria**: Component compiles, no runtime errors
+
+### Step 2: Update Reticle from Hit Test Results
+
+**What to implement**:
+1. In useFrame, get XRFrame via `state.gl.xr.getFrame()`
+2. Call `frame.getHitTestResults(hitTestSource)`
+3. If results exist, get pose and update reticle matrix (like ar-example.html lines 203-210)
+4. Set reticle visibility based on results
 
 **Success Criteria**: White ring cursor appears on detected surfaces in AR mode
 
-### Step 2: Trigger Input Detection
+### Step 3: Listen for Select Event
 
-1. Use `useXRInputSourceState` to access controllers
-2. Detect trigger button press events
-3. Log to console when trigger pressed with cursor visible
+**What to implement**:
+1. Create PlacementHandler component
+2. Use useEffect to add 'select' event listener to session (like ar-example.html line 118)
+3. Log to console when select fired
 
-**Success Criteria**: Console logs trigger presses in AR mode
+**Success Criteria**: Console logs "select" when trigger pressed
 
-### Step 3: Object Placement (No Orientation)
+### Step 4: Create Anchors on Select
 
-1. Create state to store placed pyramid positions
-2. On trigger press, add new pyramid at cursor position
-3. Render pyramids (ignore orientation initially)
+**What to implement**:
+1. Pass current hit test result from ARHitTestManager to PlacementHandler
+2. In select handler, call `hitResult.createAnchor()` (like ar-example.html line 186)
+3. Store anchors in state array
 
-**Success Criteria**: Pyramids appear at cursor location when trigger pressed
+**Success Criteria**: Console shows successful anchor creation
 
-### Step 4: Proper Orientation
+### Step 5: Render Anchored Pyramids
 
-1. Store hit matrix (not just position) for each placed object
-2. Calculate pyramid orientation from hit matrix and user position
-3. Apply rotation to pyramids
+**What to implement**:
+1. Create AnchoredPyramid component
+2. In useFrame, get anchor pose from frame (like ar-example.html lines 213-221)
+3. Update pyramid mesh matrix from anchor pose
+4. Use `<coneGeometry args={[0.2, 0.3, 4]} />` for pyramid
 
-**Success Criteria**: Pyramids point towards user, base on plane
-
-### Step 5: Anchor Implementation
-
-1. Create anchors from hit test results
-2. Store anchor references with placed objects
-3. Update object transforms from anchor poses each frame
-
-**Success Criteria**: Placed objects stay stable as user moves and tracking updates
+**Success Criteria**: Pyramids appear at cursor location when trigger pressed, stay stable as user moves
 
 ## Code Structure
 
 ### Modified App.tsx
 
 ```tsx
-// Add AR-specific components
+import { ARHitTestManager } from './components/ARHitTestManager'
+
 function Scene() {
-  // Existing VR content
   const { mode } = useXR()
 
   return (
@@ -540,35 +594,24 @@ function Scene() {
       <PlayerRig />
       <Physics>...</Physics>
 
-      {/* AR-specific components - only active in AR mode */}
-      {mode === 'immersive-ar' && (
-        <>
-          <ARCursor />
-          <ARObjectPlacer />
-          <PlacedObjects />
-        </>
-      )}
+      {/* AR-specific components - only render in AR mode */}
+      {mode === 'immersive-ar' && <ARHitTestManager />}
     </>
   )
 }
 ```
 
-### New Components
+### New Component Files
 
-**src/components/ARCursor.tsx**
-- Handles hit testing
-- Renders cursor at hit point
-- Exposes hit matrix to parent
+**src/components/ARHitTestManager.tsx**
+- Main AR component
+- Creates hit test source from viewer space
+- Renders reticle at hit point
+- Contains PlacementHandler as child
 
-**src/components/ARObjectPlacer.tsx**
-- Monitors trigger input
-- Creates placed objects
-- Manages anchors
-
-**src/components/PlacedPyramid.tsx**
-- Renders individual pyramid
-- Handles anchor-based positioning
-- Calculates orientation
+**Nested inside ARHitTestManager.tsx:**
+- `PlacementHandler` - Listens for select event, creates anchors
+- `AnchoredPyramid` - Renders pyramid tracked to anchor
 
 ## Testing Strategy
 
