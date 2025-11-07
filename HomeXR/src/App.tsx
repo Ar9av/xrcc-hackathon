@@ -11,7 +11,6 @@ const store = createXRStore()
 
 // Physics and grab constants
 const GRAB_DISTANCE = 0.5
-const THROW_MULTIPLIER = 1.5
 const VELOCITY_HISTORY_SIZE = 5
 
 /**
@@ -19,7 +18,7 @@ const VELOCITY_HISTORY_SIZE = 5
  */
 interface GrabState {
   id: string
-  rigidBodyRef: React.RefObject<RapierRigidBody>
+  rigidBodyRef: React.RefObject<RapierRigidBody | null>
   isGrabbed: boolean
   grabbedBy: 'left' | 'right' | null
   pendingVelocity: THREE.Vector3 | null
@@ -33,8 +32,8 @@ interface GrabbableFurnitureProps {
   item: FurnitureItem
   preloadedScenes: Record<FurnitureType, THREE.Object3D | null>
   grabState: GrabState
-  onGrab: (id: string, hand: 'left' | 'right') => void
-  onRelease: (id: string, hand: 'left' | 'right', velocity: THREE.Vector3) => void
+  onGrab?: (id: string, hand: 'left' | 'right') => void
+  onRelease?: (id: string, hand: 'left' | 'right', velocity: THREE.Vector3) => void
   onDragMove?: (id: string, position: [number, number, number]) => void
 }
 
@@ -87,20 +86,42 @@ interface FurniturePaletteProps {
 }
 
 function FurniturePalette({ onSelectFurniture, isOpen, onToggle }: FurniturePaletteProps) {
+  console.log('FurniturePalette render, isOpen:', isOpen)
+
+  // Don't render anything if not open to avoid Html component issues in XR
+  if (!isOpen) {
+    console.log('FurniturePalette not rendering because isOpen is false')
+    return null
+  }
+
+  console.log('FurniturePalette rendering Html component')
+
   return (
-    <Html position={[0, 2, -2]} center>
+    <Html
+      position={[0, 1.6, -1.5]}
+      center
+      distanceFactor={8}
+      occlude={false}
+      transform
+      sprite={false}
+      style={{ pointerEvents: 'auto' }}
+    >
       <div style={{
-        background: 'rgba(0, 0, 0, 0.8)',
+        background: 'rgba(0, 0, 0, 0.9)',
         borderRadius: '10px',
         padding: '20px',
         color: 'white',
         fontFamily: 'Arial, sans-serif',
         minWidth: '300px',
-        display: isOpen ? 'block' : 'none'
+        boxShadow: '0 0 20px rgba(0,0,0,0.5)',
+        border: '1px solid rgba(255,255,255,0.1)'
       }}>
         <h3 style={{ marginTop: 0, textAlign: 'center' }}>Furniture Palette</h3>
         <p style={{ textAlign: 'center', margin: '10px 0', fontSize: '12px', opacity: 0.8 }}>
           Click to auto-place furniture in the scene
+        </p>
+        <p style={{ textAlign: 'center', margin: '5px 0 15px 0', fontSize: '11px', opacity: 0.6 }}>
+          Press Menu or X/A button on controller to toggle
         </p>
         <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', justifyContent: 'center' }}>
           {Object.entries(FURNITURE_MODELS).map(([type, model]) => (
@@ -182,11 +203,11 @@ interface FurnitureItemWrapperProps {
   item: FurnitureItem
   preloadedScenes: Record<FurnitureType, THREE.Object3D | null>
   onGrab: (id: string, hand: 'left' | 'right') => void
-  onRelease: (id: string, hand: 'left' | 'right', velocity: THREE.Vector3) => void
+  onRelease?: (id: string, hand: 'left' | 'right', velocity: THREE.Vector3) => void
   onDragMove: (id: string, position: [number, number, number]) => void
 }
 
-function FurnitureItemWrapper({ item, preloadedScenes, onGrab, onRelease, onDragMove }: FurnitureItemWrapperProps) {
+function FurnitureItemWrapper({ item, preloadedScenes, onGrab, onDragMove }: FurnitureItemWrapperProps) {
   const rigidBodyRef = useRef<RapierRigidBody>(null)
   const [isGrabbed, setIsGrabbed] = useState(false)
   const [grabbedBy, setGrabbedBy] = useState<'left' | 'right' | null>(null)
@@ -226,27 +247,18 @@ function FurnitureItemWrapper({ item, preloadedScenes, onGrab, onRelease, onDrag
     }
   }, [isGrabbed])
 
-  // Calculate average velocity for throwing
-  const getAverageVelocity = () => {
-    if (velocityHistory.length === 0) return new THREE.Vector3()
-    const sum = velocityHistory.reduce((acc, vel) => acc.add(vel), new THREE.Vector3())
-    return sum.divideScalar(velocityHistory.length)
-  }
-
   // Handle grab
-  const handleGrab = useCallback((hand: 'left' | 'right') => {
+  const handleGrab = useCallback((id: string, hand: 'left' | 'right') => {
     setIsGrabbed(true)
     setGrabbedBy(hand)
-    onGrab(item.id, hand)
-  }, [item.id, onGrab])
+    onGrab(id, hand)
+  }, [onGrab])
 
   // Handle release
-  const handleRelease = useCallback((hand: 'left' | 'right') => {
-    const velocity = getAverageVelocity().multiplyScalar(THROW_MULTIPLIER)
+  const handleRelease = useCallback(() => {
     setIsGrabbed(false)
     setGrabbedBy(null)
-    onRelease(item.id, hand, velocity)
-  }, [item.id, onRelease, velocityHistory])
+  }, [])
 
   const grabState: GrabState = {
     id: item.id,
@@ -282,7 +294,7 @@ interface DragButtonProps {
 
 function DragButton({ position, onLongPressStart, onLongPressEnd, onDrag, isDragging }: DragButtonProps) {
   const [isPressed, setIsPressed] = useState(false)
-  const [longPressTimer, setLongPressTimer] = useState<NodeJS.Timeout | null>(null)
+  const [longPressTimer, setLongPressTimer] = useState<number | null>(null)
   const [dragStartPos, setDragStartPos] = useState<{ x: number; z: number } | null>(null)
 
   const handleMouseDown = (event: React.MouseEvent) => {
@@ -350,10 +362,10 @@ function DragButton({ position, onLongPressStart, onLongPressEnd, onDrag, isDrag
 /**
  * GrabbableFurniture component - renders a furniture item that can be grabbed and moved
  */
-function GrabbableFurniture({ item, preloadedScenes, grabState, onGrab, onRelease, onDragMove }: GrabbableFurnitureProps) {
+function GrabbableFurniture({ item, preloadedScenes, grabState, onDragMove }: GrabbableFurnitureProps) {
   const modelRef = useRef<THREE.Group>(null)
   const scene = preloadedScenes[item.type]
-  const { rigidBodyRef, isGrabbed, grabbedBy } = grabState
+  const { rigidBodyRef, isGrabbed } = grabState
 
   // Drag state for button-based movement
   const [isDraggingWithButton, setIsDraggingWithButton] = useState(false)
@@ -404,7 +416,7 @@ function GrabbableFurniture({ item, preloadedScenes, grabState, onGrab, onReleas
         friction={1} // Add friction for stability
         linearDamping={0.8} // Reduce unwanted movement
         angularDamping={0.8} // Prevent unwanted rotation
-        onCollisionEnter={({ other }) => {
+        onCollisionEnter={() => {
           // Handle collision logic if needed
         }}
       >
@@ -439,24 +451,79 @@ function GrabbableFurniture({ item, preloadedScenes, grabState, onGrab, onReleas
 
 
 /**
+ * UIController component - handles VR controller UI interactions (like opening menus)
+ */
+interface UIControllerProps {
+  onTogglePalette: () => void
+}
+
+function UIController({ onTogglePalette }: UIControllerProps) {
+  const leftController = useXRInputSourceState('controller', 'left')
+  const rightController = useXRInputSourceState('controller', 'right')
+
+  // Check for menu button presses (typically the menu button on VR controllers)
+  const leftMenuPressed = leftController?.gamepad?.['xr-standard-menu']?.state === 'pressed' || false
+  const rightMenuPressed = rightController?.gamepad?.['xr-standard-menu']?.state === 'pressed' || false
+
+  // Also check for X/A button presses as alternative
+  const leftXPressed = leftController?.gamepad?.['xr-standard-x-button']?.state === 'pressed' || false
+  const rightAPressed = rightController?.gamepad?.['xr-standard-a-button']?.state === 'pressed' || false
+
+  // Use useRef to track previous button states to detect button presses
+  const prevStatesRef = useRef({
+    leftMenu: false,
+    rightMenu: false,
+    leftX: false,
+    rightA: false
+  })
+
+  useEffect(() => {
+    const currentStates = {
+      leftMenu: leftMenuPressed,
+      rightMenu: rightMenuPressed,
+      leftX: leftXPressed,
+      rightA: rightAPressed
+    }
+
+    // Check if any button was just pressed (was false, now true)
+    const buttonJustPressed =
+      (!prevStatesRef.current.leftMenu && currentStates.leftMenu) ||
+      (!prevStatesRef.current.rightMenu && currentStates.rightMenu) ||
+      (!prevStatesRef.current.leftX && currentStates.leftX) ||
+      (!prevStatesRef.current.rightA && currentStates.rightA)
+
+    if (buttonJustPressed) {
+      console.log('Controller button pressed - toggling furniture palette')
+      console.log('Button states:', { leftMenu: currentStates.leftMenu, rightMenu: currentStates.rightMenu, leftX: currentStates.leftX, rightA: currentStates.rightA })
+      onTogglePalette()
+    }
+
+    // Update previous states
+    prevStatesRef.current = currentStates
+  }, [leftMenuPressed, rightMenuPressed, leftXPressed, rightAPressed, onTogglePalette])
+
+  return null // This component doesn't render anything visible
+}
+
+/**
  * GrabController component - handles VR controller grab mechanics
  */
 interface GrabControllerProps {
   hand: 'left' | 'right'
   placedFurniture: FurnitureItem[]
   onGrab: (id: string, hand: 'left' | 'right') => void
-  onRelease: (id: string, hand: 'left' | 'right', velocity: THREE.Vector3) => void
+  onRelease?: (id: string, hand: 'left' | 'right', velocity: THREE.Vector3) => void
 }
 
-function GrabController({ hand, placedFurniture, onGrab, onRelease }: GrabControllerProps) {
+function GrabController({ hand, placedFurniture, onGrab }: GrabControllerProps) {
   const controller = useXRInputSourceState('controller', hand)
   const controllerRef = useRef<THREE.Group>(null)
 
   // Check if grip button is pressed
-  const isGripPressed = controller?.gamepad?.['xr-standard-squeeze']?.pressed || false
+  const isGripPressed = controller?.gamepad?.['xr-standard-squeeze']?.state === 'pressed' || false
 
   // Find the closest grabbable furniture within range
-  const findClosestGrabbable = () => {
+  const findClosestGrabbable = (): FurnitureItem | null => {
     if (!controllerRef.current) return null
 
     const controllerPos = controllerRef.current.position
@@ -565,7 +632,7 @@ function Scene({ isPaletteOpen, onTogglePalette }: SceneProps) {
     console.log(`Grabbed furniture ${id} with ${hand} hand`)
   }
 
-  const handleRelease = (id: string, hand: 'left' | 'right', velocity: THREE.Vector3) => {
+  const handleRelease = (id: string, _hand: 'left' | 'right', velocity: THREE.Vector3) => {
     console.log(`Released furniture ${id} with velocity`, velocity)
   }
 
@@ -584,6 +651,9 @@ function Scene({ isPaletteOpen, onTogglePalette }: SceneProps) {
     <>
       {/* PlayerRig must be inside XR context to access controllers */}
       <PlayerRig />
+
+      {/* UI Controller for XR interactions */}
+      <UIController onTogglePalette={onTogglePalette} />
 
       {/* Furniture Palette */}
       <FurniturePalette
@@ -652,6 +722,15 @@ function Scene({ isPaletteOpen, onTogglePalette }: SceneProps) {
 function App() {
   const [isPaletteOpen, setIsPaletteOpen] = useState(false)
 
+  const togglePalette = useCallback(() => {
+    console.log('Toggling palette, current state:', isPaletteOpen)
+    setIsPaletteOpen(prev => {
+      const newState = !prev
+      console.log('New palette state:', newState)
+      return newState
+    })
+  }, [isPaletteOpen])
+
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
       <button
@@ -687,7 +766,7 @@ function App() {
       </button>
 
       <button
-        onClick={() => setIsPaletteOpen(!isPaletteOpen)}
+        onClick={togglePalette}
         style={{
           position: 'absolute',
           top: '100px',
@@ -706,9 +785,23 @@ function App() {
         {isPaletteOpen ? 'Close' : 'Open'} Furniture Palette
       </button>
 
+      <div style={{
+        position: 'absolute',
+        top: '140px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 1000,
+        color: '#666',
+        fontSize: '12px',
+        textAlign: 'center',
+        maxWidth: '400px'
+      }}>
+        <p>In VR/AR: Press Menu button or X/A button on controller to toggle furniture palette</p>
+      </div>
+
       <Canvas>
         <XR store={store}>
-          <Scene isPaletteOpen={isPaletteOpen} onTogglePalette={() => setIsPaletteOpen(!isPaletteOpen)} />
+          <Scene isPaletteOpen={isPaletteOpen} onTogglePalette={togglePalette} />
         </XR>
       </Canvas>
     </div>
