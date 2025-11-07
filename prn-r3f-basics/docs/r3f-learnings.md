@@ -269,6 +269,183 @@ Testing Quest 2: Run npm run dev, navigate to https://[ip]:5173/ in Quest browse
 
 Emulator: @react-three/xr includes WebXR emulator. Press Cmd/Win+Alt+E to toggle.
 
+## WebXR AR Features
+
+AR session setup: Request required features explicitly.
+```tsx
+const store = createXRStore({
+  ar: {
+    requiredFeatures: ['hit-test', 'anchors', 'plane-detection']
+  }
+})
+```
+
+WRONG: Assuming features are enabled by default causes hit test creation to fail.
+CORRECT: Explicitly request features in createXRStore configuration.
+
+### AR Hit Testing
+
+Problem: Position virtual objects on real-world surfaces detected by AR.
+
+Setup hit test source from viewer space (headset forward direction):
+```tsx
+const hitTestSourceRef = useRef<XRHitTestSource | null>(null)
+const xrRefSpaceRef = useRef<XRReferenceSpace | null>(null)
+
+useEffect(() => {
+  if (!session) return
+
+  session.requestReferenceSpace('viewer').then((viewerSpace) => {
+    if ('requestHitTestSource' in session) {
+      (session as any).requestHitTestSource({ space: viewerSpace })
+        .then((source: XRHitTestSource) => {
+          hitTestSourceRef.current = source
+        })
+    }
+  })
+
+  session.requestReferenceSpace('local-floor').then((refSpace) => {
+    xrRefSpaceRef.current = refSpace
+  })
+}, [session])
+```
+
+Get hit test results each frame:
+```tsx
+useFrame((state) => {
+  const frame = state.gl.xr.getFrame()
+  if (!frame || !hitTestSourceRef.current || !xrRefSpaceRef.current) return
+
+  const results = frame.getHitTestResults(hitTestSourceRef.current)
+  if (results.length > 0) {
+    const pose = results[0].getPose(xrRefSpaceRef.current)
+    if (pose) {
+      mesh.matrix.fromArray(pose.transform.matrix)
+      // Apply local rotation if needed
+      const rotation = new THREE.Matrix4().makeRotationX(-Math.PI / 2)
+      mesh.matrix.multiply(rotation)
+    }
+  }
+})
+```
+
+CRITICAL: Use 'local-floor' reference space, not 'local'.
+WRONG: Requesting 'local' space when XR store renders in 'local-floor' causes offset (reticle appears ~1.5m below gaze).
+CORRECT: Match reference space to XR store's rendering coordinate system.
+
+### Direct Matrix Assignment
+
+Problem: Apply WebXR pose transformations to Three.js objects.
+
+WRONG: Calling matrix.decompose() after assignment:
+```tsx
+mesh.matrix.fromArray(pose.transform.matrix)
+mesh.matrix.decompose(mesh.position, mesh.quaternion, mesh.scale) // WRONG
+```
+Result: Decomposition overwrites rotation, causing incorrect orientation.
+
+CORRECT: Direct assignment with matrixAutoUpdate disabled:
+```tsx
+<mesh ref={meshRef} matrixAutoUpdate={false}>
+  <geometry />
+</mesh>
+
+// In useFrame
+mesh.matrix.fromArray(pose.transform.matrix)
+```
+
+Why: WebXR matrices contain complete transformation (position + orientation). Y-axis aligned with surface normal. Three.js matrixAutoUpdate recalculates matrix from position/rotation/scale, overwriting your direct assignment. Disable it to maintain control.
+
+Apply local transformations by multiplying matrices:
+```tsx
+mesh.matrix.fromArray(anchorPose.transform.matrix)
+const translation = new THREE.Matrix4().makeTranslation(0, height/2, 0)
+mesh.matrix.multiply(translation)
+```
+
+### Geometry Origin Offset
+
+Problem: Place object with specific point (e.g., base) at anchor, not geometric center.
+
+ConeGeometry origin is at geometric center. To place base at anchor point:
+```tsx
+const pyramidHeight = 0.3
+mesh.matrix.fromArray(anchorPose.transform.matrix)
+// Translate up by half height along surface normal (Y-axis)
+const offset = new THREE.Matrix4().makeTranslation(0, pyramidHeight / 2, 0)
+mesh.matrix.multiply(offset)
+```
+
+WRONG: Ignoring geometry origin causes object to float or sink into surface.
+CORRECT: Translate along local Y-axis (surface normal) by half the dimension to align desired point with anchor.
+
+### Plane Detection Visualization
+
+Access detected planes from XRFrame:
+```tsx
+useFrame((state) => {
+  const frame = state.gl.xr.getFrame()
+  if (!frame?.detectedPlanes) return
+
+  frame.detectedPlanes.forEach((plane: XRPlane) => {
+    // plane.polygon contains vertices
+    // plane.planeSpace provides coordinate system
+
+    const pose = frame.getPose(plane.planeSpace, xrRefSpace)
+    if (pose) {
+      mesh.matrixAutoUpdate = false
+      mesh.matrix.fromArray(pose.transform.matrix)
+    }
+  })
+})
+```
+
+Create geometry from plane polygon:
+```tsx
+const vertices: number[] = []
+const indices: number[] = []
+
+plane.polygon.forEach((point: DOMPointReadOnly) => {
+  vertices.push(point.x, point.y, point.z)
+})
+
+// Fan triangulation
+for (let i = 1; i < plane.polygon.length - 1; i++) {
+  indices.push(0, i, i + 1)
+}
+
+geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3))
+geometry.setIndex(indices)
+```
+
+### Anchors
+
+Create anchor from hit test result:
+```tsx
+session.addEventListener('select', () => {
+  if (hitResult) {
+    (hitResult as any).createAnchor().then((anchor: XRAnchor) => {
+      // Store anchor for tracking
+    })
+  }
+})
+```
+
+Update anchored object each frame:
+```tsx
+useFrame((state) => {
+  const frame = state.gl.xr.getFrame()
+  if (!frame?.trackedAnchors?.has(anchor)) return
+
+  const pose = frame.getPose(anchor.anchorSpace, xrRefSpace)
+  if (pose) {
+    mesh.matrix.fromArray(pose.transform.matrix)
+  }
+})
+```
+
+Anchors maintain stable references to real-world locations as tracking improves.
+
 ## Quick Reference
 
 ```tsx

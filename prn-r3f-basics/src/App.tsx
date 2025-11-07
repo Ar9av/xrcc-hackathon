@@ -1,13 +1,19 @@
 import { useRef, useState } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
-import { XR, createXRStore, useXRInputSourceState, XROrigin, useXRControllerLocomotion } from '@react-three/xr'
+import { XR, createXRStore, useXR, useXRInputSourceState, XROrigin, useXRControllerLocomotion } from '@react-three/xr'
 import { OrbitControls, Box, Sphere } from '@react-three/drei'
 import { Physics, RigidBody, RapierRigidBody } from '@react-three/rapier'
 import * as THREE from 'three'
 import './App.css'
+import { ARHitTestManager } from './components/ARHitTestManager'
 
 // Create XR store - manages VR/AR session state
-const store = createXRStore()
+// Request hit-test, anchors, and plane-detection features for AR
+const store = createXRStore({
+  ar: {
+    requiredFeatures: ['hit-test', 'anchors', 'plane-detection'],
+  }
+})
 
 /**
  * PlayerRig component handles VR locomotion (movement)
@@ -23,15 +29,7 @@ function PlayerRig() {
   // - Snap rotation with right thumbstick (comfortable for VR)
   // - Proper dead zones
   useXRControllerLocomotion(originRef, {
-    translation: {
-      speed: 2.0  // Movement speed (units per second)
-    },
-    rotation: {
-      type: 'snap',    // Snap turning (like Meta default) - more comfortable
-      degrees: 45,     // Rotate 45 degrees per snap
-      deadZone: 0.1    // Thumbstick dead zone to prevent drift
-    },
-    translationController: 'left'  // Left controller thumbstick for movement
+    speed: 2.0  // Movement speed (units per second)
   })
 
   // Return the XROrigin component - this is the root of the player's coordinate system
@@ -242,6 +240,9 @@ function GrabController({ hand, balls, onGrab, onRelease }: GrabControllerProps)
  * Scene component contains all 3D objects and lighting
  */
 function Scene() {
+  // Detect XR mode to conditionally render AR or VR components
+  const { mode } = useXR()
+
   // Create refs for each ball
   const ball1Ref = useRef<RapierRigidBody | null>(null)
   const ball2Ref = useRef<RapierRigidBody | null>(null)
@@ -322,6 +323,9 @@ function Scene() {
       {/* PlayerRig must be inside XR context to access controllers */}
       <PlayerRig />
 
+      {/* AR-specific components - only render in AR mode */}
+      {mode === 'immersive-ar' && <ARHitTestManager />}
+
       {/* Physics world - wraps all physics-enabled objects */}
       <Physics gravity={[0, -9.81, 0]}>
         {/* Lighting setup */}
@@ -353,13 +357,15 @@ function Scene() {
           </Box>
         </RigidBody>
 
-        {/* Ground plane - fixed rigid body */}
-        <RigidBody type="fixed" rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-          <mesh receiveShadow>
-            <planeGeometry args={[50, 50]} />
-            <meshStandardMaterial color="lightblue" wireframe={false} />
-          </mesh>
-        </RigidBody>
+        {/* Ground plane - fixed rigid body (hidden in AR mode) */}
+        {mode !== 'immersive-ar' && (
+          <RigidBody type="fixed" rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
+            <mesh receiveShadow>
+              <planeGeometry args={[50, 50]} />
+              <meshStandardMaterial color="lightblue" wireframe={false} />
+            </mesh>
+          </RigidBody>
+        )}
 
         {/* Grabbable balls */}
         {balls.map((ball) => (

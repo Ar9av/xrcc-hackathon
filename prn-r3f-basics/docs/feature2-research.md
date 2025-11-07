@@ -676,3 +676,58 @@ The AR placement system implemented in Feature 2 will be reused:
 - Add object type selection
 
 Keep this in mind when implementing Feature 2 to make Feature 3 integration smoother.
+
+## Implementation Learnings
+
+### ✅ Correct Approach: Direct Matrix Assignment
+
+The correct approach follows ar-example.html exactly - directly assign the WebXR matrix without decomposition:
+
+```typescript
+// Get hit test pose
+const hitPose = hitTestResults[0].getPose(xrRefSpace)
+
+// CORRECT: Directly assign matrix
+mesh.matrixAutoUpdate = false
+mesh.matrix.fromArray(hitPose.transform.matrix)
+
+// For reticle: apply local rotation to make ring lie flat
+const rotationMatrix = new THREE.Matrix4().makeRotationX(-Math.PI / 2)
+mesh.matrix.multiply(rotationMatrix)
+```
+
+**Why this works:**
+- WebXR pose matrices already contain complete transformation (position + orientation)
+- Y-axis in matrix is aligned with surface normal (perpendicular to plane)
+- `matrixAutoUpdate={false}` prevents Three.js from overwriting our matrix
+- No decomposition needed - just use the matrix directly
+
+### ❌ Incorrect Approaches Encountered
+
+**1. Coordinate Space Mismatch**
+- Initial issue: Requested `'local'` reference space but XR store renders in `'local-floor'`
+- **Result**: Reticle appeared ~1.5m below gaze (offset by head height)
+- **Fix**: Use `'local-floor'` reference space to match the rendering coordinate system
+
+**2. Matrix Decomposition**
+- Initial approach: Called `matrix.decompose(position, quaternion, scale)` after assigning matrix
+- **Result**: Decomposition overwrote the rotation, causing reticle to stand perpendicular to plane
+- **Fix**: Remove decomposition entirely, use `matrixAutoUpdate={false}`, assign matrix directly
+
+**3. Missing Required Features**
+- Initial issue: XR store didn't request `'hit-test'` and `'anchors'` features
+- **Result**: Hit test source creation failed or didn't work correctly
+- **Fix**: Add required features to `createXRStore({ ar: { requiredFeatures: ['hit-test', 'anchors', 'plane-detection'] } })`
+
+### Key Takeaways
+
+1. **Always match coordinate spaces**: If XR store uses `'local-floor'`, get poses in `'local-floor'`
+2. **Trust the WebXR matrix**: Don't decompose or recalculate - the matrix is already correct
+3. **Use matrixAutoUpdate={false}**: Essential when directly controlling transformation matrix
+4. **Request features explicitly**: Don't assume WebXR features are enabled by default
+5. **Apply local rotations after**: For geometry-specific rotations (like making ring flat), multiply matrices
+
+### Implementation Files
+
+- `src/components/ARHitTestManager.tsx` - Complete AR hit testing implementation
+- `src/App.tsx` - XR store configuration with required features
