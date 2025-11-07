@@ -6,6 +6,7 @@ import { Physics, RigidBody, RapierRigidBody } from '@react-three/rapier'
 import * as THREE from 'three'
 import './App.css'
 import { ARHitTestManager } from './components/ARHitTestManager'
+import { ObjectPalette } from './components/ObjectPalette'
 
 // Create XR store - manages VR/AR session state
 // Request hit-test, anchors, and plane-detection features for AR
@@ -243,6 +244,44 @@ function Scene() {
   // Detect XR mode to conditionally render AR or VR components
   const { mode } = useXR()
 
+  // Feature 3 state management - Object Palette and Draw Mode
+  const [isPaletteVisible, setIsPaletteVisible] = useState(false)
+  const [selectedObjectType, setSelectedObjectType] = useState<'block' | 'pyramid' | null>(null)
+  const [isDrawMode, setIsDrawMode] = useState(false)
+
+  // Feature 3 handlers
+  const handleTogglePalette = () => {
+    setIsPaletteVisible(prev => {
+      const newVisibility = !prev
+      console.log('Toggling palette from', prev, 'to', newVisibility)
+
+      // Exit draw mode when opening palette (cleaner than delay)
+      if (newVisibility) {
+        setIsDrawMode(false)
+        setSelectedObjectType(null)
+      }
+
+      return newVisibility
+    })
+  }
+
+  const handleSelectBlock = () => {
+    setSelectedObjectType('block')
+    setIsDrawMode(true)
+    setIsPaletteVisible(false)
+  }
+
+  const handleSelectPyramid = () => {
+    setSelectedObjectType('pyramid')
+    setIsDrawMode(true)
+    setIsPaletteVisible(false)
+  }
+
+  const handleExitDrawMode = () => {
+    setIsDrawMode(false)
+    setSelectedObjectType(null)
+  }
+
   // Create refs for each ball
   const ball1Ref = useRef<RapierRigidBody | null>(null)
   const ball2Ref = useRef<RapierRigidBody | null>(null)
@@ -324,7 +363,22 @@ function Scene() {
       <PlayerRig />
 
       {/* AR-specific components - only render in AR mode */}
-      {mode === 'immersive-ar' && <ARHitTestManager />}
+      {mode === 'immersive-ar' && (
+        <>
+          <ARHitTestManager
+            isDrawMode={isDrawMode}
+            selectedObjectType={selectedObjectType}
+          />
+          <ObjectPalette
+            isVisible={isPaletteVisible}
+            onTogglePalette={handleTogglePalette}
+            onSelectBlock={handleSelectBlock}
+            onSelectPyramid={handleSelectPyramid}
+            onExitDrawMode={handleExitDrawMode}
+            isDrawMode={isDrawMode}
+          />
+        </>
+      )}
 
       {/* Physics world - wraps all physics-enabled objects */}
       <Physics gravity={[0, -9.81, 0]}>
