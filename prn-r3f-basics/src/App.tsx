@@ -1,13 +1,17 @@
 import { useRef, useState } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
-import { XR, createXRStore, useXRInputSourceState, XROrigin, useXRControllerLocomotion } from '@react-three/xr'
+import { XR, createXRStore, useXRInputSourceState, XROrigin, useXRControllerLocomotion, useXR } from '@react-three/xr'
 import { OrbitControls, Box, Sphere } from '@react-three/drei'
 import { Physics, RigidBody, RapierRigidBody } from '@react-three/rapier'
 import * as THREE from 'three'
 import './App.css'
+import { ARPhysics } from './components/ar/ARPhysics'
 
 // Create XR store - manages VR/AR session state
-const store = createXRStore()
+const store = createXRStore({
+  planeDetection: true,  // Quest 2/3 - detect flat surfaces
+  meshDetection: true    // Quest 3 only - detailed room geometry
+})
 
 /**
  * PlayerRig component handles VR locomotion (movement)
@@ -23,15 +27,7 @@ function PlayerRig() {
   // - Snap rotation with right thumbstick (comfortable for VR)
   // - Proper dead zones
   useXRControllerLocomotion(originRef, {
-    translation: {
-      speed: 2.0  // Movement speed (units per second)
-    },
-    rotation: {
-      type: 'snap',    // Snap turning (like Meta default) - more comfortable
-      degrees: 45,     // Rotate 45 degrees per snap
-      deadZone: 0.1    // Thumbstick dead zone to prevent drift
-    },
-    translationController: 'left'  // Left controller thumbstick for movement
+    speed: 2.0  // Movement speed (units per second)
   })
 
   // Return the XROrigin component - this is the root of the player's coordinate system
@@ -242,6 +238,10 @@ function GrabController({ hand, balls, onGrab, onRelease }: GrabControllerProps)
  * Scene component contains all 3D objects and lighting
  */
 function Scene() {
+  // Detect AR vs VR mode
+  const mode = useXR(state => state.mode)
+  const isAR = mode === 'immersive-ar'
+
   // Create refs for each ball
   const ball1Ref = useRef<RapierRigidBody | null>(null)
   const ball2Ref = useRef<RapierRigidBody | null>(null)
@@ -319,14 +319,14 @@ function Scene() {
 
   return (
     <>
-      {/* PlayerRig must be inside XR context to access controllers */}
-      <PlayerRig />
+      {/* VR-only: PlayerRig for locomotion (in AR, user walks in real space) */}
+      {!isAR && <PlayerRig />}
 
       {/* Physics world - wraps all physics-enabled objects */}
       <Physics gravity={[0, -9.81, 0]}>
-        {/* Lighting setup */}
-        <ambientLight intensity={0.5} />
-        <directionalLight position={[10, 10, 5]} intensity={1} />
+        {/* Lighting setup - adjust intensity per mode */}
+        <ambientLight intensity={isAR ? 0.8 : 0.5} />
+        <directionalLight position={[10, 10, 5]} intensity={isAR ? 0.5 : 1.0} />
 
         {/* Fixed cubes - static rigid bodies that balls will collide with */}
         <RigidBody type="fixed" position={[0, 1.5, -2]}>
@@ -353,13 +353,18 @@ function Scene() {
           </Box>
         </RigidBody>
 
-        {/* Ground plane - fixed rigid body */}
-        <RigidBody type="fixed" rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-          <mesh receiveShadow>
-            <planeGeometry args={[50, 50]} />
-            <meshStandardMaterial color="lightblue" wireframe={false} />
-          </mesh>
-        </RigidBody>
+        {/* VR-only: Ground plane (in AR, we use detected real floor) */}
+        {!isAR && (
+          <RigidBody type="fixed" rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
+            <mesh receiveShadow>
+              <planeGeometry args={[50, 50]} />
+              <meshStandardMaterial color="lightblue" wireframe={false} />
+            </mesh>
+          </RigidBody>
+        )}
+
+        {/* AR-only: Real-world collision (walls, floor, furniture) */}
+        {isAR && <ARPhysics />}
 
         {/* Grabbable balls */}
         {balls.map((ball) => (
@@ -389,8 +394,8 @@ function Scene() {
         />
       </Physics>
 
-      {/* Grid helper for better spatial awareness - 50x50 grid, 1 unit cells */}
-      <gridHelper args={[50, 50, 'gray', 'darkgray']} position={[0, 0.01, 0]} />
+      {/* VR-only: Grid helper for spatial awareness (in AR, real environment provides context) */}
+      {!isAR && <gridHelper args={[50, 50, 'gray', 'darkgray']} position={[0, 0.01, 0]} />}
 
       {/* Orbit controls only active in non-XR mode (desktop viewing) */}
       <OrbitControls />
