@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useXR } from '@react-three/xr'
+import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 
 /**
@@ -13,12 +14,12 @@ import * as THREE from 'three'
  *
  * Feature 3 additions:
  * - Only shows cursor when in draw mode
- * - Supports placing different object types (block or pyramid)
+ * - Supports placing different object types (table, bed, or sofa)
  */
 
 interface ARHitTestManagerProps {
   isDrawMode: boolean
-  selectedObjectType: 'block' | 'pyramid' | null
+  selectedObjectType: 'table' | 'bed' | 'sofa' | null
 }
 
 export function ARHitTestManager({ isDrawMode, selectedObjectType }: ARHitTestManagerProps) {
@@ -218,7 +219,7 @@ interface PlacementHandlerProps {
   hitResult: XRHitTestResult | null
   xrRefSpace: XRReferenceSpace | null
   isDrawMode: boolean
-  selectedObjectType: 'block' | 'pyramid' | null
+  selectedObjectType: 'table' | 'bed' | 'sofa' | null
 }
 
 function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectType }: PlacementHandlerProps) {
@@ -226,7 +227,7 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
   const [anchoredObjects, setAnchoredObjects] = useState<Array<{
     id: string
     anchor: XRAnchor
-    type: 'block' | 'pyramid'
+    type: 'table' | 'bed' | 'sofa'
   }>>([])
 
   // Listen for select event (mirrors ar-example.html lines 118, 183-192)
@@ -272,24 +273,40 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
 }
 
 /**
- * AnchoredObject - Renders object (block or pyramid) that tracks anchor position
+ * AnchoredObject - Renders GLB model (table, bed, or sofa) that tracks anchor position
  *
  * Updates object position from anchor pose each frame
- * Feature 3: Supports both block and pyramid object types
+ * Feature 3: Supports table, bed, and sofa object types loaded from GLB files
  */
 interface AnchoredObjectProps {
   anchor: XRAnchor
   xrRefSpace: XRReferenceSpace | null
-  type: 'block' | 'pyramid'
+  type: 'table' | 'bed' | 'sofa'
 }
 
 function AnchoredObject({ anchor, xrRefSpace, type }: AnchoredObjectProps) {
-  const meshRef = useRef<THREE.Mesh>(null)
+  const groupRef = useRef<THREE.Group>(null)
   const { session } = useXR()
+
+  // Load the appropriate GLB model
+  const modelPath = `/asset/${type}.glb`
+  const { scene } = useGLTF(modelPath)
+
+  // Clone the scene to avoid sharing geometry between instances
+  const clonedScene = useMemo(() => scene.clone(), [scene])
+
+  // Calculate Y offset once when model is loaded
+  const yOffset = useMemo(() => {
+    const box = new THREE.Box3().setFromObject(clonedScene)
+    const size = box.getSize(new THREE.Vector3())
+    const center = box.getCenter(new THREE.Vector3())
+    // Calculate Y offset to place object base on surface
+    return size.y / 2 - center.y
+  }, [clonedScene])
 
   // Update position from anchor each frame (mirrors ar-example.html lines 213-221)
   useFrame((state) => {
-    if (!session || !xrRefSpace || !meshRef.current) return
+    if (!session || !xrRefSpace || !groupRef.current) return
 
     const frame = state.gl.xr.getFrame()
     if (!frame) return
@@ -305,25 +322,21 @@ function AnchoredObject({ anchor, xrRefSpace, type }: AnchoredObjectProps) {
     // The matrix already contains correct position AND orientation:
     // - Position: where the anchor is (on the surface)
     // - Orientation: Y-axis = surface normal (perpendicular to plane)
-    meshRef.current.matrix.fromArray(anchorPose.transform.matrix)
+    groupRef.current.matrix.fromArray(anchorPose.transform.matrix)
 
-    // CRITICAL: Offset object so BASE is at anchor point, not center
-    // Geometry origin is at geometric center, so we translate up by height/2
-    // Translation is along Y-axis in the anchor's local space (surface normal direction)
-    const objectHeight = type === 'block' ? 0.5 : 0.3
-    const translationMatrix = new THREE.Matrix4().makeTranslation(0, objectHeight / 2, 0)
-    meshRef.current.matrix.multiply(translationMatrix)
+    // Offset by calculated Y offset so the bottom of the object sits on the surface
+    const translationMatrix = new THREE.Matrix4().makeTranslation(0, yOffset, 0)
+    groupRef.current.matrix.multiply(translationMatrix)
   })
 
   return (
-    <mesh ref={meshRef} matrixAutoUpdate={false}>
-      {/* Render different geometry based on object type */}
-      {type === 'block' ? (
-        <boxGeometry args={[0.5, 0.5, 0.5]} />
-      ) : (
-        <coneGeometry args={[0.2, 0.3, 4]} />
-      )}
-      <meshStandardMaterial color={type === 'block' ? 'orange' : 'cyan'} />
-    </mesh>
+    <group ref={groupRef} matrixAutoUpdate={false}>
+      <primitive object={clonedScene} />
+    </group>
   )
 }
+
+// Preload models for better performance
+useGLTF.preload('/asset/table.glb')
+useGLTF.preload('/asset/bed.glb')
+useGLTF.preload('/asset/sofa.glb')

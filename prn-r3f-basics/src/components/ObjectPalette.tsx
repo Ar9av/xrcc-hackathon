@@ -1,7 +1,8 @@
 import { useRef, useState, useEffect } from 'react'
-import { useFrame } from '@react-three/fiber'
+import { useFrame, useLoader } from '@react-three/fiber'
 import { useXRInputSourceState } from '@react-three/xr'
 import * as THREE from 'three'
+import { TextureLoader } from 'three'
 
 // Temp vectors/matrix to avoid allocations in useFrame
 const headPos = new THREE.Vector3()
@@ -19,8 +20,9 @@ const lookMatrix = new THREE.Matrix4()
 interface ObjectPaletteProps {
   isVisible: boolean
   onTogglePalette: () => void
-  onSelectBlock: () => void
-  onSelectPyramid: () => void
+  onSelectTable: () => void
+  onSelectBed: () => void
+  onSelectSofa: () => void
   onExitDrawMode: () => void
   isDrawMode: boolean
 }
@@ -28,18 +30,20 @@ interface ObjectPaletteProps {
 export function ObjectPalette({
   isVisible,
   onTogglePalette,
-  onSelectBlock,
-  onSelectPyramid,
+  onSelectTable,
+  onSelectBed,
+  onSelectSofa,
   onExitDrawMode,
   isDrawMode
 }: ObjectPaletteProps) {
   return (
     <>
-      {/* Palette UI - 3D panel with block and pyramid buttons */}
+      {/* Palette UI - 3D panel with table, bed, and sofa buttons */}
       <PalettePanel
         visible={isVisible}
-        onSelectBlock={onSelectBlock}
-        onSelectPyramid={onSelectPyramid}
+        onSelectTable={onSelectTable}
+        onSelectBed={onSelectBed}
+        onSelectSofa={onSelectSofa}
       />
 
       {/* Button input controller - Y to toggle palette, X to exit draw mode */}
@@ -58,15 +62,22 @@ export function ObjectPalette({
  */
 interface PalettePanelProps {
   visible: boolean
-  onSelectBlock: () => void
-  onSelectPyramid: () => void
+  onSelectTable: () => void
+  onSelectBed: () => void
+  onSelectSofa: () => void
 }
 
-function PalettePanel({ visible, onSelectBlock, onSelectPyramid }: PalettePanelProps) {
+function PalettePanel({ visible, onSelectTable, onSelectBed, onSelectSofa }: PalettePanelProps) {
   const groupRef = useRef<THREE.Group>(null)
   const positioned = useRef(false)
-  const [blockHovered, setBlockHovered] = useState(false)
-  const [pyramidHovered, setPyramidHovered] = useState(false)
+  const [tableHovered, setTableHovered] = useState(false)
+  const [bedHovered, setBedHovered] = useState(false)
+  const [sofaHovered, setSofaHovered] = useState(false)
+
+  // Load images
+  const tableTexture = useLoader(TextureLoader, '/asset/images/table.png')
+  const bedTexture = useLoader(TextureLoader, '/asset/images/bed.webp')
+  const sofaTexture = useLoader(TextureLoader, '/asset/images/sofa.webp')
 
   // Debug visualization refs
   const debugGroupRef = useRef<THREE.Group>(null)
@@ -191,36 +202,77 @@ function PalettePanel({ visible, onSelectBlock, onSelectPyramid }: PalettePanelP
       <group ref={groupRef}>
         {/* Panel background - using BasicMaterial so it's visible without lighting */}
         <mesh position={[0, 0, 0]}>
-          <planeGeometry args={[1.0, 0.5]} />
+          <planeGeometry args={[1.5, 0.6]} />
           <meshBasicMaterial color="#666666" opacity={0.95} transparent />
         </mesh>
 
-        {/* Block button - left side - using BasicMaterial for visibility in AR */}
+        {/* Table button - left side */}
         <mesh
-          position={[-0.3, 0, 0.01]}
+          position={[-0.4, 0, 0.01]}
           onClick={() => {
-            console.log('Block selected!')
-            onSelectBlock()
+            console.log('Table selected!')
+            onSelectTable()
           }}
-          onPointerOver={() => setBlockHovered(true)}
-          onPointerOut={() => setBlockHovered(false)}
+          onPointerOver={() => setTableHovered(true)}
+          onPointerOut={() => setTableHovered(false)}
         >
-          <boxGeometry args={[0.3, 0.3, 0.3]} />
-          <meshBasicMaterial color={blockHovered ? 'yellow' : 'orange'} />
+          <planeGeometry args={[0.3, 0.3]} />
+          <meshBasicMaterial 
+            map={tableTexture} 
+            transparent 
+            opacity={tableHovered ? 1.0 : 0.8}
+          />
+        </mesh>
+        {/* Table label background */}
+        <mesh position={[-0.4, -0.2, 0.01]}>
+          <planeGeometry args={[0.3, 0.1]} />
+          <meshBasicMaterial color={tableHovered ? '#ffff00' : '#888888'} opacity={0.9} transparent />
         </mesh>
 
-        {/* Pyramid button - right side - using BasicMaterial for visibility in AR */}
+        {/* Bed button - center */}
         <mesh
-          position={[0.3, 0, 0.01]}
+          position={[0, 0, 0.01]}
           onClick={() => {
-            console.log('Pyramid selected!')
-            onSelectPyramid()
+            console.log('Bed selected!')
+            onSelectBed()
           }}
-          onPointerOver={() => setPyramidHovered(true)}
-          onPointerOut={() => setPyramidHovered(false)}
+          onPointerOver={() => setBedHovered(true)}
+          onPointerOut={() => setBedHovered(false)}
         >
-          <coneGeometry args={[0.15, 0.3, 4]} />
-          <meshBasicMaterial color={pyramidHovered ? 'yellow' : 'cyan'} />
+          <planeGeometry args={[0.3, 0.3]} />
+          <meshBasicMaterial 
+            map={bedTexture} 
+            transparent 
+            opacity={bedHovered ? 1.0 : 0.8}
+          />
+        </mesh>
+        {/* Bed label background */}
+        <mesh position={[0, -0.2, 0.01]}>
+          <planeGeometry args={[0.3, 0.1]} />
+          <meshBasicMaterial color={bedHovered ? '#ffff00' : '#888888'} opacity={0.9} transparent />
+        </mesh>
+
+        {/* Sofa button - right side */}
+        <mesh
+          position={[0.4, 0, 0.01]}
+          onClick={() => {
+            console.log('Sofa selected!')
+            onSelectSofa()
+          }}
+          onPointerOver={() => setSofaHovered(true)}
+          onPointerOut={() => setSofaHovered(false)}
+        >
+          <planeGeometry args={[0.3, 0.3]} />
+          <meshBasicMaterial 
+            map={sofaTexture} 
+            transparent 
+            opacity={sofaHovered ? 1.0 : 0.8}
+          />
+        </mesh>
+        {/* Sofa label background */}
+        <mesh position={[0.4, -0.2, 0.01]}>
+          <planeGeometry args={[0.3, 0.1]} />
+          <meshBasicMaterial color={sofaHovered ? '#ffff00' : '#888888'} opacity={0.9} transparent />
         </mesh>
       </group>
     </>
