@@ -206,42 +206,61 @@ function SelectionHighlight({ type }: { type: string }) {
 
 **Challenge**: How to detect "clicking on nothing" in 3D space?
 
-**Solution**: Add a large invisible plane that captures clicks outside objects.
+**Solution**: Listen to the session 'select' event and use a flag to track if an object handled the click.
 
 **Implementation**:
 
 ```tsx
-function PlacedObjectsManager({
-  anchoredObjects,
-  selectedObjectId,
-  onSelectObject,
-  onDeselectObject,
-  xrRefSpace
+function PlacementHandler({
+  hitResult,
+  xrRefSpace,
+  isDrawMode,
+  selectedObjectType
 }) {
+  const { session } = useXR()
+  const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null)
+  const [anchoredObjects, setAnchoredObjects] = useState([...])
+  const objectClickedRef = useRef(false)
+
+  // Listen for select event for both placement and deselection
+  useEffect(() => {
+    if (!session) return
+
+    const onSelect = () => {
+      // Check if an object was clicked
+      if (!objectClickedRef.current && selectedObjectId) {
+        // No object clicked but we have a selection - deselect
+        console.log('Deselecting - clicked empty space')
+        setSelectedObjectId(null)
+      }
+
+      // Reset flag for next select event
+      objectClickedRef.current = false
+
+      // Existing placement logic
+      if (isDrawMode && selectedObjectType && hitResult && xrRefSpace) {
+        // ... anchor creation code ...
+      }
+    }
+
+    session.addEventListener('select', onSelect)
+    return () => session.removeEventListener('select', onSelect)
+  }, [session, hitResult, xrRefSpace, isDrawMode, selectedObjectType, selectedObjectId])
+
   return (
     <>
-      {/* Invisible plane for deselection - covers large area */}
-      <mesh
-        position={[0, 0, 0]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        onClick={onDeselectObject}
-        visible={false}  // Invisible but still captures clicks
-      >
-        <planeGeometry args={[100, 100]} />
-        <meshBasicMaterial transparent opacity={0} />
-      </mesh>
-
-      {/* Render all placed objects */}
-      {anchoredObjects.map((obj) => (
+      {anchoredObjects.map(({ id, anchor, type }) => (
         <SelectableObject
-          key={obj.id}
-          id={obj.id}
-          anchor={obj.anchor}
+          key={id}
+          id={id}
+          anchor={anchor}
           xrRefSpace={xrRefSpace}
-          type={obj.type}
-          isSelected={selectedObjectId === obj.id}
-          onSelect={onSelectObject}
-          onDeselect={onDeselectObject}
+          type={type}
+          isSelected={selectedObjectId === id}
+          onSelect={(id) => {
+            objectClickedRef.current = true
+            setSelectedObjectId(id)
+          }}
         />
       ))}
     </>
@@ -250,30 +269,25 @@ function PlacedObjectsManager({
 ```
 
 **How It Works**:
-1. Invisible plane is positioned to cover workspace
-2. When ray hits plane (not object) and trigger pressed, plane's onClick fires
-3. Plane's onClick calls deselect handler
-4. Objects' onClick handlers call `stopPropagation()` to prevent plane from also firing
-5. Results in clicking object = select, clicking elsewhere = deselect
+1. `objectClickedRef` tracks whether any object handled the current select event
+2. When an object is clicked, it sets the flag to `true` BEFORE the session 'select' event fires
+3. In the session 'select' handler:
+   - If flag is `false` and we have a selection → deselect (clicked empty space)
+   - If flag is `true` → object already handled it (selection already updated)
+4. Reset flag after each select event
 
-**Alternative Approach**: Listen to session 'select' event and check if ray hit any object.
+**Why This Is Better Than Invisible Plane**:
+- No extra geometry in the scene
+- More explicit and readable logic
+- Aligns with existing 'select' event pattern used for placement
+- No need to manage invisible collision meshes
+- More efficient (no raycasting against large plane)
 
-```tsx
-useEffect(() => {
-  if (!session) return
-
-  const handleSelect = (event: XRInputSourceEvent) => {
-    // If no object was clicked (they would have stopPropagation), deselect
-    // This is tricky because we don't have access to raycast results here
-    // Invisible plane approach is simpler
-  }
-
-  session.addEventListener('select', handleSelect)
-  return () => session.removeEventListener('select', handleSelect)
-}, [session])
-```
-
-**Recommendation**: Use invisible plane approach - simpler and leverages existing pointer event system.
+**Key Points**:
+- Use `useRef` for the flag to avoid re-renders
+- Reset flag AFTER checking, not before
+- Objects still call `event.stopPropagation()` to prevent event bubbling issues
+- Works seamlessly with existing placement logic in same event handler
 
 ### 3. Controller Button Detection for Deletion
 
@@ -511,37 +525,40 @@ function PlacementHandler({
   hitResult,
   xrRefSpace,
   isDrawMode,
-  selectedObjectType,
-  selectedObjectId,      // NEW
-  onSelectObject,        // NEW
-  onDeselectObject,      // NEW
-  onDeleteSelected       // NEW
+  selectedObjectType
 }) {
   const [anchoredObjects, setAnchoredObjects] = useState([...])
+  const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null)
+  const objectClickedRef = useRef(false)
 
-  // Move delete logic here since we have setAnchoredObjects
+  // Delete logic
   const handleDelete = () => {
     if (!selectedObjectId) return
     setAnchoredObjects(prev => prev.filter(obj => obj.id !== selectedObjectId))
-    onDeselectObject() // Clear selection after delete
+    setSelectedObjectId(null) // Clear selection after delete
   }
 
   useEffect(() => {
-    // Existing anchor creation logic
-  }, [session, hitResult, ...])
+    // Combined placement and deselection logic
+    const onSelect = () => {
+      // Handle deselection
+      if (!objectClickedRef.current && selectedObjectId) {
+        setSelectedObjectId(null)
+      }
+      objectClickedRef.current = false
+
+      // Existing anchor creation logic
+      if (isDrawMode && selectedObjectType && hitResult && xrRefSpace) {
+        // ... create anchor ...
+      }
+    }
+
+    session.addEventListener('select', onSelect)
+    return () => session.removeEventListener('select', onSelect)
+  }, [session, hitResult, selectedObjectId, ...])
 
   return (
     <>
-      {/* NEW: Deselection plane */}
-      <mesh
-        position={[0, 0, 0]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        onClick={onDeselectObject}
-        visible={false}
-      >
-        <planeGeometry args={[100, 100]} />
-      </mesh>
-
       {/* Modified: SelectableObject instead of AnchoredObject */}
       {anchoredObjects.map(({ id, anchor, type }) => (
         <SelectableObject
@@ -551,7 +568,10 @@ function PlacementHandler({
           xrRefSpace={xrRefSpace}
           type={type}
           isSelected={selectedObjectId === id}
-          onSelect={onSelectObject}
+          onSelect={(id) => {
+            objectClickedRef.current = true
+            setSelectedObjectId(id)
+          }}
         />
       ))}
 
@@ -593,32 +613,22 @@ function SelectionHighlight() {
 
 **State Management Location**:
 
-Option 1: Keep in PlacementHandler (simpler for now)
+Keep selection state in PlacementHandler component since:
+- It already manages `anchoredObjects` state
+- Delete logic needs both states together
+- Keeps Feature 4.1 self-contained
+- Simple and straightforward
+
 ```tsx
 function PlacementHandler(...) {
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null)
   const [anchoredObjects, setAnchoredObjects] = useState([...])
+  const objectClickedRef = useRef(false)
   // ...
 }
 ```
 
-Option 2: Lift to Scene component (better for Feature 4.2 integration)
-```tsx
-// Scene.tsx
-function Scene() {
-  const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null)
-
-  return (
-    <ARHitTestManager
-      selectedObjectId={selectedObjectId}
-      onSelectObject={setSelectedObjectId}
-      onDeselectObject={() => setSelectedObjectId(null)}
-    />
-  )
-}
-```
-
-**Recommendation**: Start with Option 1 (PlacementHandler) for Feature 4.1, refactor to Option 2 when implementing Feature 4.2.
+**Note**: If Feature 4.2 requires lifting state to Scene component, refactor at that time. For now, keeping everything in PlacementHandler is cleaner.
 
 ## Pointer Event System Deep Dive
 
@@ -729,11 +739,12 @@ const handleSelect = useCallback((id: string) => {
 ### Phase 3: Deselection
 
 **What to implement**:
-1. Add invisible deselection plane to scene
-2. Position plane to cover large workspace area
-3. Add `onClick` handler to plane that deselects
-4. Add `onDeselectObject` callback to state management
-5. Test: Click empty space → selection cleared → visual feedback disappears
+1. Add `objectClickedRef` to track if object was clicked
+2. Update session 'select' event handler to check flag
+3. If flag is false and we have a selection, deselect
+4. Reset flag after each select event
+5. Update object onClick to set flag before selecting
+6. Test: Click empty space → selection cleared → visual feedback disappears
 
 **Files to modify**:
 - `src/components/ARHitTestManager.tsx`
@@ -742,6 +753,7 @@ const handleSelect = useCallback((id: string) => {
 - Clicking empty space deselects current selection
 - Visual feedback disappears
 - Console logs "Object deselected"
+- No interference with object placement logic
 
 ### Phase 4: B Button Detection
 
@@ -969,17 +981,19 @@ const [transformMode, setTransformMode] = useState<'rotate' | 'scale' | 'positio
 
 ## Potential Challenges & Solutions
 
-### Challenge 1: Event StopPropagation
+### Challenge 1: Deselection Timing
 
-**Problem**: Clicking object also triggers deselection plane.
+**Problem**: Object selection and deselection both respond to 'select' event - order matters.
 
 **Solution**:
-- Call `event.stopPropagation()` in object's onClick handler
-- Prevents event from bubbling to plane
+- Use ref flag that objects set synchronously in their onClick
+- Session 'select' event fires after, checks flag
+- Flag approach ensures objects can "claim" the select event
 
 **Testing**:
 - Click object → should select, not deselect
-- Click near object → should deselect
+- Click empty space → should deselect
+- Rapid clicking between objects → should work correctly
 
 ### Challenge 2: B Button Not Registering
 
@@ -1013,22 +1027,43 @@ const [transformMode, setTransformMode] = useState<'rotate' | 'scale' | 'positio
 
 ### Challenge 5: Interaction with Draw Mode
 
-**Problem**: Should users be able to select objects while in draw mode?
+**Problem**: Should users be able to select objects while in draw mode? Placement and selection both use 'select' event.
 
-**Current Spec**: No mention of restrictions.
+**Current Spec**: No explicit restrictions mentioned.
 
-**Recommendation**:
-- Allow selection anytime (more flexible)
-- If confusing, consider disabling selection during draw mode
-- Test with users to determine best UX
+**Solution**:
+- Allow selection anytime (more flexible UX)
+- Use flag-based approach to distinguish between:
+  - Object clicked → selection happens, placement skipped (flag = true)
+  - Empty space clicked in draw mode → placement happens, deselection skipped (flag = false)
+- Both behaviors can coexist in same event handler
 
-**Implementation** (if restricting):
+**Implementation**:
 ```tsx
-<SelectableObject
-  onClick={isDrawMode ? undefined : handleClick}
-  // Disable selection in draw mode
-/>
+const onSelect = () => {
+  // Handle selection/deselection first
+  if (objectClickedRef.current) {
+    // Object was clicked - selection already handled by object onClick
+    objectClickedRef.current = false
+    return // Don't place object when selecting
+  }
+
+  if (selectedObjectId) {
+    // Clicked empty space with selection - deselect
+    setSelectedObjectId(null)
+  }
+
+  // Then handle placement
+  if (isDrawMode && selectedObjectType && hitResult && xrRefSpace) {
+    // ... create anchor ...
+  }
+}
 ```
+
+This allows users to:
+1. Select objects while in draw mode
+2. Place new objects while an object is selected
+3. Deselect by clicking empty space (even in draw mode)
 
 ## Key Learnings Applied
 
