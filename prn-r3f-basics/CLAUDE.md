@@ -40,10 +40,24 @@ The dev server runs on port 5173 with HTTPS enabled (required for WebXR). The se
 
 - **src/App.tsx** - Main application file containing:
   - `App` - Root component (XR store, entry buttons, Canvas)
-  - `Scene` - 3D scene (PlayerRig, Physics, GrabbableBalls, environment)
+  - `Scene` - 3D scene (PlayerRig, Physics, GrabbableBalls, AR components)
   - `PlayerRig` - VR locomotion using `useXRControllerLocomotion` hook
   - `GrabbableBall` - Physics ball with grab/throw mechanics
   - `GrabController` - Grip button handler for grab/throw
+  - AR state management for object palette and draw mode
+
+- **src/components/ARHitTestManager.tsx** - AR plane detection and object placement:
+  - Hit test source creation from viewer space
+  - Reticle cursor positioning on detected planes
+  - Object placement via anchors on trigger press
+  - Support for multiple object types (block, pyramid, furniture)
+  - Draw mode integration (only places objects when in draw mode)
+
+- **src/components/ObjectPalette.tsx** - 3D UI palette for AR object selection:
+  - `ObjectPalette` - Main component managing palette and button input
+  - `PalettePanel` - 3D UI panel with object selection buttons
+  - `PaletteController` - Y/X button detection for palette control
+  - Position calculation in front of user's head using camera.matrixWorld
 
 ### Key Hooks (from @react-three/xr)
 
@@ -78,13 +92,52 @@ VELOCITY_HISTORY_SIZE = 5  // For throw velocity calculation
 App (XR store, entry buttons)
 └── Canvas → XR → Scene
     ├── PlayerRig (locomotion with useXRControllerLocomotion)
-    ├── Physics
+    ├── AR Mode Components (when mode === 'immersive-ar'):
+    │   ├── ARHitTestManager (plane detection, object placement)
+    │   └── ObjectPalette (3D UI for object selection)
+    ├── Physics (VR mode)
     │   ├── GrabbableBall (x3)
     │   ├── RigidBody cubes (x4)
     │   └── Ground plane
-    ├── GrabController (left/right hands)
+    ├── GrabController (left/right hands, VR mode)
     └── OrbitControls (desktop preview)
 ```
+
+### Feature 3: Object Palette for AR
+
+**Purpose:** Allow users to select and place different object types in AR mode using a 3D UI palette.
+
+**User Workflow:**
+1. Enter AR mode → Detect planes
+2. Press Y button (left controller) → Palette appears in front of user
+3. Point controller at object button → Press trigger → Object selected, draw mode activated, palette closes
+4. Point at detected plane → Cursor appears → Press trigger → Place selected object
+5. Press Y to reopen palette and select different object type
+6. Press X to exit draw mode (hides cursor)
+
+**State Management (in Scene component):**
+- `isPaletteVisible`: Boolean controlling palette UI visibility
+- `selectedObjectType`: String indicating which object is selected ('block' | 'pyramid' | 'bed' | 'sofa' | 'table' | null)
+- `isDrawMode`: Boolean indicating if user can place objects
+
+**Controller Button Mapping:**
+- Y button (left controller): Toggle palette visibility, exits draw mode when opening
+- X button (left controller): Exit draw mode
+- Trigger button: Select object from palette OR place object on plane (depending on context)
+
+**3D Assets (added by ar9av):**
+Located in `public/asset/`:
+- `bed.glb` - 3D furniture model
+- `sofa.glb` - 3D furniture model
+- `table.glb` - 3D furniture model
+- `images/bed.webp` - Palette button texture
+- `images/sofa.webp` - Palette button texture
+- `images/table.png` - Palette button texture
+
+**Known Issues:**
+- Palette positioning inconsistent - sometimes appears on floor, sometimes to the right
+- camera.getWorldDirection() occasionally returns unexpected values (e.g., pointing down when user looking forward)
+- Debug visualizations added to troubleshoot: shows default forward, quaternion-applied forward, forward flat, head position, target position as colored rays from origin
 
 ### Critical WebXR Patterns
 
@@ -160,6 +213,8 @@ const y = thumbstick?.yAxis ?? 0  // -1 to 1
 
 ## Testing on Quest 2
 
+### VR Mode Testing
+
 1. Start dev server: `npm run dev`
 2. Note the network URL shown in terminal (e.g., `https://192.168.1.3:5173/`)
 3. On Quest 2 browser:
@@ -167,13 +222,35 @@ const y = thumbstick?.yAxis ?? 0  // -1 to 1
    - Accept self-signed certificate warning
    - Click "Enter VR" button
 4. Use thumbsticks to move and rotate
+5. Test ball grabbing with grip buttons
+
+### AR Mode Testing
+
+1. Start dev server: `npm run dev`
+2. On Quest 2 browser, navigate to the HTTPS URL
+3. Click "Enter AR" button
+4. Allow camera permissions
+5. Move device to scan environment for plane detection
+6. Test object palette workflow:
+   - Press Y to open palette
+   - Point at object and press trigger to select
+   - Point at detected plane and press trigger to place
+   - Press X to exit draw mode
+   - Press Y again to select different object type
 
 ## Learning Resources
 
 The `docs/r3f-learnings.md` file contains comprehensive documentation on:
 - React Three Fiber fundamentals
-- WebXR implementation patterns
+- WebXR implementation patterns (VR and AR)
 - Controller input handling details
+- AR hit testing and plane detection
+- AR UI menu positioning (camera.matrixWorld, orientation, lifecycle management)
+- Physics interactions and object grabbing
 - Best practices and common pitfalls
 
 Refer to this document when implementing new XR features or troubleshooting issues.
+
+Additional documentation:
+- `docs/feature3-research.md` - Detailed research on object palette implementation, controller interactions, and 3D UI design patterns
+- `docs/r3f-feature-exploration.md` - Feature requirements and exploration notes
