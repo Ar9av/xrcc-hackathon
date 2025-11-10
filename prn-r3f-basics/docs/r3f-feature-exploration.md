@@ -36,42 +36,70 @@ The objective of this project is to build basic features to explore and understa
 - The object is created at the cursor exactly like feature 2 implementation. The base of the object is on the plane and it is placed on the side of the plane facing the user
 - Exit draw mode by pressing X on left controller
 
-## Feature 4 - Object selection and changing scale, position and rotation
+## Feature 4 - Object selection and modification
 
-- In this feature I want to add the ability to change the position, scale and rotation of the created objects
-- Pointing at created objects and pressing trigger selects an object (requires rays from the controller to be always present to select objects in the scene)
-- There are 3 modes for a selected object corresponding to the 3 transformations
-    - position mode
+- In this feature I want to add the ability to
+    - Select an object that has been created
+    - Delete selected object
+    - Rotate the object
+    - Change the size (scale) the object
+    - change the position
+
+## 4.1 Object Selection and deleting an object
+
+- Pointing at created objects and pressing trigger button selects an object
+- For pointing we have already implemented object
+- Visual feedback for currently selected object is based on the “axes” that appear for the modification. This will be implemented in next section.
+- Pointing anywhere else (that is not on any created object) and clicking trigger deselects the object currently selected object
+- pressing ‘B’ on right controller deletes the currently selected object
+
+## 4.2 Modifying an object
+
+- There are 3 modes for modifying an object
+    - Rotate mode
     - Scale mode
-    - rotation mode
+    - Position mode
 - Toggle between the modes by using the ‘A’ button on right controller
-- Pointing anywhere else (not on any created object) and clicking trigger deselects the object currently selected object
-- pressing ‘B’ on right controller deletes the selected object
+- The default mode is rotate mode
+- We will implement the modes one by one
+
+### Rotate mode behaviour
+
+- A single axis appears centred on the object when object is in rotate mode.
+- The axes should look like normal 3D axes rays
+- The axis appears perpendicular to the plane on which the object is placed
+- The axis color needs to be yellow for rotate mode
+- Object can only be rotated along this axis
+    - In technical terms the rotation is being done around the axis which is perpendicular to the plane but the visual effect is that the object stays attached to the plane at its base
+- The axes need to be always be visible even if the object is bigger than the axes (axis length must change size of object but there must be a minimum length of 0.5m)
+- Rotation is done by pointing at the axis and holding the grip button
+    - Holding and dragging up (positive direction of the axis) rotates the object counter clockwise when viewed from above the axis
+    - Holding and dragging down (negative direction of the axis) rotates the object clockwise when viewed from above the axis
+
+### Scale mode behaviour
+
+- A single axis appears centred on the object when object is in rotate mode.
+- The axes should look like normal 3D axes rays
+- The axis appears perpendicular to the plane on which the object is placed
+- The axis color needs to be green for scale mode
+- The axes need to be always be visible even if the object is bigger than the axes (axis length must change size of object but there must be a minimum length of 0.5m)
+- Scaling is done by pointing at the axis and holding the grip button
+    - Holding and dragging up (positive direction of the axis) increases the size
+    - Holding and dragging down (negative direction of the axis) decreases the size
+- The dimension ratio is to be maintained at the original ratio when scaling. So all dimensions are scaled equally.
 
 ### Position mode behaviour
 
+- Two perpendicular axes appear centred on the selected objected
+- The axes correspond to the x and y direction of the plane in which the object was created
+    - This means the axes are parallel to the plane of creation (not global X and Y)
 - The axes should look like normal 3D axes rays
-- Only two axes should appear, which correspond to the x and y direction of the plan in which the object was created. Moving a created object is only allowed along the plane in which it was created
-- The axes need to be always be visible even if the object is bigger than the axes (axis length must change with a min length)
-- On pointing at any axis using controller and holding with the grip button, I should be able to drag the object up and down that axis by moving my hand in the up or down direction of that axis
+- The axis color should be red for position mode
+- Moving a created object is only allowed along the plane in which it was created
+- The axes need to be always be visible even if the object is bigger than the axes (axis length must change size of object but there must be a minimum length of 0.5m)
+- On pointing at any axis using controller and holding with the grip button, I should be able to drag the object up and down that axis by moving my hand along the direction of that axis
+- The object moves in the direction my hand moves
 - For example
     - An object is created on the wall
     - On selecting that object, X and Y axes appear centred on that object, parallel to the wall plane
     - I can point at X axis, click and hold grip button to drag along the direction of the axis to move the object
-
-### Scale mode behaviour
-
-- The axes should look like normal 3D axes rays
-- There is only one axes that appears in scale mode and it appears perpendicular to the plane on which the object is placed
-- The axes need to be always be visible even if the object is bigger than the axes (axis length must change with a min length)
-- On pointing at the axis using controller and holding with the grip button, I should be able to drag up and down along the axis to increase or decrease the size of the object
-- The aspect ratio is to be maintained at the original ratio when scaling. So all dimensions are scaled equally.
-
-### Rotate mode behaviour
-
-- The axes should look like normal 3D axes rays
-- There is only one axes that appears in scale mode and it appears perpendicular to the plane on which the object is placed
-- Object can only be rotated along this axis
-    - In technical terms the rotation is being done around the axis which is perpendicular to the plane but the visual effect is that the object stays attached to the plane at its base
-- The axes need to be always be visible even if the object is bigger than the axes (axis length must change with a min length)
-- On pointing at the axis using controller and holding with the grip button, I should be able to drag up and down along the axis to rotate clockwise and counter clock wise respectively

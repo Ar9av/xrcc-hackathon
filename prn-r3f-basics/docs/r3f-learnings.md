@@ -472,3 +472,129 @@ function PlayerRig() {
   return <XROrigin ref={originRef} />
 }
 ```
+
+## AR UI Menu Positioning
+
+Problem: Position 3D UI menu in front of user's head in AR mode. Must appear at correct height and orientation regardless of head pose.
+
+Challenge: In WebXR, camera.position and camera.quaternion remain at origin. Actual head pose is in camera.matrixWorld. Using camera.position directly places UI at floor level.
+
+### Getting Head Position and Orientation
+
+Extract head position from matrixWorld:
+```tsx
+const position = new THREE.Vector3()
+position.setFromMatrixPosition(camera.matrixWorld)
+```
+
+WRONG: Using camera.position returns [0,0,0] in WebXR.
+CORRECT: Extract from matrixWorld which contains actual tracked pose.
+
+Get forward direction by applying camera.quaternion to default forward vector:
+```tsx
+const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion)
+```
+
+Alternative using getWorldDirection:
+```tsx
+const forward = camera.getWorldDirection(new THREE.Vector3())
+```
+
+Both methods should give same result. If they differ, matrixWorld may not be synchronized with quaternion.
+
+### Horizontal Plane Projection
+
+Project forward direction onto horizontal plane to keep UI upright when looking up/down:
+```tsx
+const forwardFlat = new THREE.Vector3(forward.x, 0, forward.z)
+
+// Guard against zero-vector when looking straight up/down
+if (forwardFlat.lengthSq() < 1e-4) {
+  // Fallback: use camera Y rotation
+  forwardFlat.set(-Math.sin(camera.rotation.y), 0, -Math.cos(camera.rotation.y))
+}
+forwardFlat.normalize()
+```
+
+WRONG: Normalizing zero-vector when looking straight up/down produces NaN, sending UI to origin.
+CORRECT: Check lengthSq before normalize, use fallback if too small.
+
+### UI Placement
+
+Place menu at head position plus offset in forward direction:
+```tsx
+const target = position.clone().addScaledVector(forwardFlat, 1.0)  // 1m ahead
+target.y = position.y - 0.15  // Slightly below eye level
+panel.position.copy(target)
+```
+
+WRONG: Replacing position with forward direction (target = forwardFlat) places UI near origin.
+CORRECT: forwardFlat is direction vector, not position. Add to head position to place in front.
+
+### UI Orientation
+
+Make panel face user using lookAt, not copying camera quaternion:
+```tsx
+const lookMatrix = new THREE.Matrix4()
+lookMatrix.lookAt(target, position, upVec)
+panel.quaternion.setFromRotationMatrix(lookMatrix)
+panel.rotateY(Math.PI)  // Flip so front faces user
+```
+
+WRONG: Copying camera.quaternion makes panel tilt with head (pitch/roll).
+CORRECT: Use lookAt to make panel face head position, keeping it upright.
+
+### Component Lifecycle Management
+
+Reset positioning flag when UI hidden using useEffect:
+```tsx
+const positioned = useRef(false)
+
+useEffect(() => {
+  if (!visible) positioned.current = false
+}, [visible])
+
+useFrame(() => {
+  if (visible && !positioned.current) {
+    // Position panel
+    positioned.current = true
+  }
+})
+```
+
+WRONG: Resetting flag in useFrame after early return. When visible=false, component returns null, so groupRef.current is null, causing early return before reset block runs.
+CORRECT: Use useEffect to reset flag based on visibility prop. useEffect runs regardless of render output.
+
+### AR UI Material
+
+Use meshBasicMaterial for UI elements in AR:
+```tsx
+<mesh>
+  <planeGeometry />
+  <meshBasicMaterial color="#666666" />
+</mesh>
+```
+
+WRONG: meshStandardMaterial requires scene lighting, may appear dark in AR passthrough.
+CORRECT: meshBasicMaterial displays at full brightness without lighting.
+
+### Button Input Integration
+
+Exit draw mode when opening palette to prevent accidental placement:
+```tsx
+const handleTogglePalette = () => {
+  setIsPaletteVisible(prev => {
+    if (!prev) {  // Opening palette
+      setIsDrawMode(false)
+      setSelectedObjectType(null)
+    }
+    return !prev
+  })
+}
+```
+
+This prevents trigger press that opens palette from also triggering placement action, which is cleaner than adding time-based delays.
+
+### Known Issues
+
+Positioning may be inconsistent across different headsets or orientations. camera.getWorldDirection sometimes returns unexpected values (e.g., pointing down when user is looking forward). Quaternion-based forward calculation may differ from getWorldDirection. Requires further investigation with debug visualizations showing default forward, quaternion-applied forward, and projected horizontal forward.
