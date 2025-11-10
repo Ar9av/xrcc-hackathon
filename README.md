@@ -1,43 +1,56 @@
-# WebXR Sample (Three.js + Vite)
+# PRN React Three Fiber XR Basics
 
-Minimal WebXR starter supporting both VR and AR using Three.js.
+A learning project to understand the basics of React Three Fiber (R3F) for XR (Virtual Reality and Augmented Reality) development.
 
-## Quick start
+## Tech Stack
+
+- **React** - UI framework
+- **TypeScript** - Type safety
+- **Vite** - Build tool and dev server
+- **Three.js** - 3D graphics library
+- **@react-three/fiber** - React renderer for Three.js
+- **@react-three/drei** - Useful helpers for R3F
+- **@react-three/xr** - XR support for R3F (VR/AR)
+
+## Getting Started
 
 ```bash
-# from this folder
+# Install dependencies
 npm install
+
+# Start development server
 npm run dev
 ```
 
-Open the printed local URL. For AR, use a device with WebXR AR support and open the HTTPS URL (see Deploy section).
-
 ## Features
-- VR and AR buttons (via Three.js `VRButton`/`ARButton`)
-- Simple scene with a spinning cube
-- AR hit-test with reticle; tap/trigger to place cubes
-- Vite dev server for fast iteration
 
-## Scripts
-- `npm run dev`: start dev server
-- `npm run build`: production build
-- `npm run preview`: preview production build
+- Basic 3D scene with lighting
+- Interactive 3D objects (pink box)
+- Ground plane for spatial reference
+- OrbitControls for desktop viewing
+- VR support with "Enter VR" button
+- AR support with "Enter AR" button
 
-## Deploy (for AR over HTTPS)
-AR requires a secure context. Options:
-- Use `npm run build` and host `dist/` on any static host with HTTPS
-- Use GitHub Pages/Netlify/Vercel and open on a mobile device supporting WebXR
+## Development Notes
 
-## Notes
-- Not all devices/browsers support WebXR AR. Chrome/Android with WebXR and ARCore is commonly supported.
-- If AR button is disabled, try a supported device/browser or ensure HTTPS.
+- The scene includes ambient and directional lighting
+- Objects are positioned in 3D space (x, y, z coordinates)
+- The XR store manages VR/AR session state
+- OrbitControls allow camera manipulation in browser mode
 
-## Files
-- `index.html`: basic page shell
-- `src/main.js`: Three.js scene + WebXR setup
-- `src/style.css`: minimal UI styles
-- `vite.config.js`: Vite configuration
+## Testing XR Features
 
-## License
-MIT
+**For VR:**
+- You need a WebXR-compatible browser and VR headset
+- Click "Enter VR" button to start VR session
 
+**For AR:**
+- You need a WebXR-compatible browser on an AR-capable device
+- Click "Enter AR" button to start AR session
+
+## Resources
+
+- [React Three Fiber Docs](https://docs.pmnd.rs/react-three-fiber)
+- [React Three Drei Docs](https://github.com/pmndrs/drei)
+- [React Three XR Docs](https://github.com/pmndrs/xr)
+- [Three.js Docs](https://threejs.org/docs/)
