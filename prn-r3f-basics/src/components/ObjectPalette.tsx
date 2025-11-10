@@ -23,6 +23,7 @@ interface ObjectPaletteProps {
   onSelectTable: () => void
   onSelectBed: () => void
   onSelectSofa: () => void
+  onSelectRoundTable: () => void
   onExitDrawMode: () => void
   isDrawMode: boolean
 }
@@ -33,17 +34,19 @@ export function ObjectPalette({
   onSelectTable,
   onSelectBed,
   onSelectSofa,
+  onSelectRoundTable,
   onExitDrawMode,
   isDrawMode
 }: ObjectPaletteProps) {
   return (
     <>
-      {/* Palette UI - 3D panel with table, bed, and sofa buttons */}
+      {/* Palette UI - 3D panel with table, bed, sofa, and round-table buttons */}
       <PalettePanel
         visible={isVisible}
         onSelectTable={onSelectTable}
         onSelectBed={onSelectBed}
         onSelectSofa={onSelectSofa}
+        onSelectRoundTable={onSelectRoundTable}
       />
 
       {/* Button input controller - Y to toggle palette, X to exit draw mode */}
@@ -65,19 +68,22 @@ interface PalettePanelProps {
   onSelectTable: () => void
   onSelectBed: () => void
   onSelectSofa: () => void
+  onSelectRoundTable: () => void
 }
 
-function PalettePanel({ visible, onSelectTable, onSelectBed, onSelectSofa }: PalettePanelProps) {
+function PalettePanel({ visible, onSelectTable, onSelectBed, onSelectSofa, onSelectRoundTable }: PalettePanelProps) {
   const groupRef = useRef<THREE.Group>(null)
   const positioned = useRef(false)
   const [tableHovered, setTableHovered] = useState(false)
   const [bedHovered, setBedHovered] = useState(false)
   const [sofaHovered, setSofaHovered] = useState(false)
+  const [roundTableHovered, setRoundTableHovered] = useState(false)
 
   // Load images
   const tableTexture = useLoader(TextureLoader, '/asset/images/table.png')
   const bedTexture = useLoader(TextureLoader, '/asset/images/bed.webp')
-  const sofaTexture = useLoader(TextureLoader, '/asset/images/sofa.webp')
+  const sofaTexture = useLoader(TextureLoader, '/asset/images/sofa.png')
+  const roundTableTexture = useLoader(TextureLoader, '/asset/images/round-table.jpg')
 
   // Debug visualization refs
   const debugGroupRef = useRef<THREE.Group>(null)
@@ -202,7 +208,7 @@ function PalettePanel({ visible, onSelectTable, onSelectBed, onSelectSofa }: Pal
       <group ref={groupRef}>
         {/* Panel background - using BasicMaterial so it's visible without lighting */}
         <mesh position={[0, 0, 0]}>
-          <planeGeometry args={[1.5, 0.6]} />
+          <planeGeometry args={[2.0, 0.6]} />
           <meshBasicMaterial color="#666666" opacity={0.95} transparent />
         </mesh>
 
@@ -273,6 +279,29 @@ function PalettePanel({ visible, onSelectTable, onSelectBed, onSelectSofa }: Pal
         <mesh position={[0.4, -0.2, 0.01]}>
           <planeGeometry args={[0.3, 0.1]} />
           <meshBasicMaterial color={sofaHovered ? '#ffff00' : '#888888'} opacity={0.9} transparent />
+        </mesh>
+
+        {/* Round Table button - far right side */}
+        <mesh
+          position={[0.8, 0, 0.01]}
+          onClick={() => {
+            console.log('Round Table selected!')
+            onSelectRoundTable()
+          }}
+          onPointerOver={() => setRoundTableHovered(true)}
+          onPointerOut={() => setRoundTableHovered(false)}
+        >
+          <planeGeometry args={[0.3, 0.3]} />
+          <meshBasicMaterial 
+            map={roundTableTexture} 
+            transparent 
+            opacity={roundTableHovered ? 1.0 : 0.8}
+          />
+        </mesh>
+        {/* Round Table label background */}
+        <mesh position={[0.8, -0.2, 0.01]}>
+          <planeGeometry args={[0.3, 0.1]} />
+          <meshBasicMaterial color={roundTableHovered ? '#ffff00' : '#888888'} opacity={0.9} transparent />
         </mesh>
       </group>
     </>

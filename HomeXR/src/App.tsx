@@ -585,6 +585,48 @@ function Scene({ isPaletteOpen, onTogglePalette }: SceneProps) {
     const sofaGltf = useGLTF(FURNITURE_MODELS.sofa.path)
     const tableGltf = useGLTF(FURNITURE_MODELS.table.path)
 
+    // Helper function to fix materials in a scene
+    const fixMaterials = (scene: THREE.Object3D) => {
+      scene.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.material) {
+          // Handle both single materials and arrays
+          const materials = Array.isArray(child.material) ? child.material : [child.material]
+          
+          materials.forEach((material) => {
+            if (material instanceof THREE.MeshStandardMaterial || 
+                material instanceof THREE.MeshPhysicalMaterial) {
+              // Material is already a lit material, just ensure it's properly configured
+              material.needsUpdate = true
+              // Ensure textures are properly set
+              if (material.map) material.map.needsUpdate = true
+              if (material.normalMap) material.normalMap.needsUpdate = true
+              if (material.roughnessMap) material.roughnessMap.needsUpdate = true
+              if (material.metalnessMap) material.metalnessMap.needsUpdate = true
+            } else if (material instanceof THREE.MeshBasicMaterial) {
+              // Convert unlit materials to lit materials to show textures properly
+              const newMaterial = new THREE.MeshStandardMaterial()
+              newMaterial.copy(material)
+              if (material.map) newMaterial.map = material.map
+              if (material.color) newMaterial.color.copy(material.color)
+              newMaterial.needsUpdate = true
+              // Replace the material
+              if (Array.isArray(child.material)) {
+                const index = child.material.indexOf(material)
+                child.material[index] = newMaterial
+              } else {
+                child.material = newMaterial
+              }
+            }
+          })
+        }
+      })
+    }
+
+    // Fix materials for each scene
+    fixMaterials(bedGltf.scene)
+    fixMaterials(sofaGltf.scene)
+    fixMaterials(tableGltf.scene)
+
     return {
       bed: bedGltf.scene,
       sofa: sofaGltf.scene,

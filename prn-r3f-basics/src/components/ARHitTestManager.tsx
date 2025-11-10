@@ -19,7 +19,7 @@ import * as THREE from 'three'
 
 interface ARHitTestManagerProps {
   isDrawMode: boolean
-  selectedObjectType: 'table' | 'bed' | 'sofa' | null
+  selectedObjectType: 'table' | 'bed' | 'sofa' | 'round-table' | null
 }
 
 export function ARHitTestManager({ isDrawMode, selectedObjectType }: ARHitTestManagerProps) {
@@ -159,7 +159,7 @@ function PlaneVisualizer({ xrRefSpace }: PlaneVisualizerProps) {
           wireframe: true
         })
         mesh = new THREE.Mesh(geometry, material)
-        groupRef.current.add(mesh)
+        groupRef.current?.add(mesh)
       }
 
       // Update plane geometry from polygon
@@ -219,7 +219,7 @@ interface PlacementHandlerProps {
   hitResult: XRHitTestResult | null
   xrRefSpace: XRReferenceSpace | null
   isDrawMode: boolean
-  selectedObjectType: 'table' | 'bed' | 'sofa' | null
+  selectedObjectType: 'table' | 'bed' | 'sofa' | 'round-table' | null
 }
 
 function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectType }: PlacementHandlerProps) {
@@ -227,7 +227,7 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
   const [anchoredObjects, setAnchoredObjects] = useState<Array<{
     id: string
     anchor: XRAnchor
-    type: 'table' | 'bed' | 'sofa'
+    type: 'table' | 'bed' | 'sofa' | 'round-table'
   }>>([])
 
   // Listen for select event (mirrors ar-example.html lines 118, 183-192)
@@ -281,7 +281,7 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
 interface AnchoredObjectProps {
   anchor: XRAnchor
   xrRefSpace: XRReferenceSpace | null
-  type: 'table' | 'bed' | 'sofa'
+  type: 'table' | 'bed' | 'sofa' | 'round-table'
 }
 
 function AnchoredObject({ anchor, xrRefSpace, type }: AnchoredObjectProps) {
@@ -289,13 +289,59 @@ function AnchoredObject({ anchor, xrRefSpace, type }: AnchoredObjectProps) {
   const { session } = useXR()
 
   // Load the appropriate GLB model
-  const modelPath = `/asset/${type}.glb`
+  const modelPath = type === 'round-table' ? '/asset/round-table.glb' : `/asset/${type}.glb`
   const { scene } = useGLTF(modelPath)
 
   // Clone the scene to avoid sharing geometry between instances
-  const clonedScene = useMemo(() => scene.clone(), [scene])
+  const clonedScene = useMemo(() => {
+    const cloned = scene.clone()
+    
+    // Traverse and fix materials to ensure textures and colors are visible
+    cloned.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.material) {
+        // Handle both single materials and arrays
+        const materials = Array.isArray(child.material) ? child.material : [child.material]
+        
+        materials.forEach((material) => {
+          if (material instanceof THREE.MeshStandardMaterial || 
+              material instanceof THREE.MeshPhysicalMaterial) {
+            // Material is already a lit material, just ensure it's properly configured
+            material.needsUpdate = true
+            // Ensure textures are properly set
+            if (material.map) material.map.needsUpdate = true
+            if (material.normalMap) material.normalMap.needsUpdate = true
+            if (material.roughnessMap) material.roughnessMap.needsUpdate = true
+            if (material.metalnessMap) material.metalnessMap.needsUpdate = true
+          } else if (material instanceof THREE.MeshBasicMaterial) {
+            // Convert unlit materials to lit materials to show textures properly
+            const newMaterial = new THREE.MeshStandardMaterial()
+            newMaterial.copy(material)
+            if (material.map) newMaterial.map = material.map
+            if (material.color) newMaterial.color.copy(material.color)
+            newMaterial.needsUpdate = true
+            // Replace the material
+            if (Array.isArray(child.material)) {
+              const index = child.material.indexOf(material)
+              child.material[index] = newMaterial
+            } else {
+              child.material = newMaterial
+            }
+          }
+        })
+      }
+    })
+    
+    return cloned
+  }, [scene])
 
-  // Calculate Y offset once when model is loaded
+  // Scale factors: table 90% (10% reduction), bed 20% (80% reduction), sofa 100%, round-table 100%
+  const scale = useMemo(() => {
+    if (type === 'table') return 0.9
+    if (type === 'bed') return 0.25
+    return 1.0
+  }, [type])
+
+  // Calculate Y offset once when model is loaded (unscaled, we'll scale it in the offset)
   const yOffset = useMemo(() => {
     const box = new THREE.Box3().setFromObject(clonedScene)
     const size = box.getSize(new THREE.Vector3())
@@ -324,14 +370,16 @@ function AnchoredObject({ anchor, xrRefSpace, type }: AnchoredObjectProps) {
     // - Orientation: Y-axis = surface normal (perpendicular to plane)
     groupRef.current.matrix.fromArray(anchorPose.transform.matrix)
 
-    // Offset by calculated Y offset so the bottom of the object sits on the surface
-    const translationMatrix = new THREE.Matrix4().makeTranslation(0, yOffset, 0)
+    // Offset by calculated Y offset (scaled) so the bottom of the object sits on the surface
+    const translationMatrix = new THREE.Matrix4().makeTranslation(0, yOffset * scale, 0)
     groupRef.current.matrix.multiply(translationMatrix)
   })
 
   return (
     <group ref={groupRef} matrixAutoUpdate={false}>
-      <primitive object={clonedScene} />
+      <group scale={scale}>
+        <primitive object={clonedScene} />
+      </group>
     </group>
   )
 }
@@ -340,3 +388,4 @@ function AnchoredObject({ anchor, xrRefSpace, type }: AnchoredObjectProps) {
 useGLTF.preload('/asset/table.glb')
 useGLTF.preload('/asset/bed.glb')
 useGLTF.preload('/asset/sofa.glb')
+useGLTF.preload('/asset/round-table.glb')
