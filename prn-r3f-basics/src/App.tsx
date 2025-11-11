@@ -203,9 +203,14 @@ function App() {
     }, 100)
   }
 
+  const handleEnterDefaultView = () => {
+    setShowLandingPage(false)
+    // Just show the default view without entering AR
+  }
+
   // Show landing page
   if (showLandingPage) {
-    return <LandingPage onEnterAR={handleEnterAR} />
+    return <LandingPage onEnterAR={handleEnterAR} onEnterDefaultView={handleEnterDefaultView} />
   }
 
   return (

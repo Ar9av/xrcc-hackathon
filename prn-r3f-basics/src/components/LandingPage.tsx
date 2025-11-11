@@ -14,9 +14,10 @@ import './LandingPage.css'
 
 interface LandingPageProps {
   onEnterAR: () => void
+  onEnterDefaultView: () => void
 }
 
-export default function LandingPage({ onEnterAR }: LandingPageProps) {
+export default function LandingPage({ onEnterAR, onEnterDefaultView }: LandingPageProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const { scrollYProgress } = useScroll({
     target: containerRef,
@@ -145,8 +146,8 @@ export default function LandingPage({ onEnterAR }: LandingPageProps) {
                 Start Staging Free
               </MagicButton>
             </Magnet>
-            <MagicButton variant="secondary" className="hero-button">
-              Watch 2-Min Demo
+            <MagicButton variant="secondary" onClick={onEnterDefaultView} className="hero-button">
+              View in Browser
             </MagicButton>
           </motion.div>
 
