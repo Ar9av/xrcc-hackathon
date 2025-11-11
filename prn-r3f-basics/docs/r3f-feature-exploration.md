@@ -134,9 +134,11 @@ Move behaviour
     - When in move mode, hold the grip button and drag your hand along the X and Y axis shown in move mode (local to object’s x and y)
     - Both X and Y components of hand movement along the X and Y axis are translated to object movement along those axes
     - on leaving the grip button the object stops moving but remains in move mode
-- The distance to move the object along each axis is determined by the distance of hand from the point where the grip button was pressed along the plane of the object
+- The distance to move the object along each axis is determined by the distance of hand from the point where the grip button was pressed along the plane of the object multiplied by a sensitivity factor
+- Sensitivity factor can be 2 to begin with (that is moving hand 1m moves object by 2m)
 - For example
     - An object is created on the wall
     - On selecting that object, X and Y axes appear centred on that object, parallel to the wall plane
     - I can hold the grip button to drag along the X axis that appeared to move the object to along that axis
 - The moving should be smooth and real time with the movement of the hand
+- Moving should also move the anchor point so that rotation works properly
