@@ -4,6 +4,10 @@ import { useXR, useXRInputSourceState } from '@react-three/xr'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 
+// Feature 4.2: Debug flag for rotation visualization
+// Set to false to hide debug axes and improve performance
+const ENABLE_ROTATION_DEBUG = false
+
 /**
  * ARHitTestManager - Main component for AR plane detection and object placement
  *
@@ -226,17 +230,24 @@ interface PlacementHandlerProps {
   onExitDrawMode: () => void
 }
 
+// Feature 4.2: Transform mode type
+type TransformMode = 'rotate' | 'scale' | 'move'
+
 function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectType, onExitDrawMode }: PlacementHandlerProps) {
   const { session } = useXR()
   const [anchoredObjects, setAnchoredObjects] = useState<Array<{
     id: string
     anchor: XRAnchor
     type: 'table' | 'bed' | 'sofa' | 'round-table'
+    rotation: number  // Feature 4.2: Rotation angle in radians around plane normal
   }>>([])
 
   // Feature 4.1: Selection state
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null)
   const objectClickedRef = useRef(false)
+
+  // Feature 4.2: Transform mode state (default is rotate)
+  const [transformMode, setTransformMode] = useState<TransformMode>('rotate')
 
   // Feature 4.1: Delete handler
   const handleDeleteSelected = () => {
@@ -245,6 +256,34 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
     console.log(`Deleting object: ${selectedObjectId}`)
     setAnchoredObjects(prev => prev.filter(obj => obj.id !== selectedObjectId))
     setSelectedObjectId(null)
+  }
+
+  // Feature 4.2: Rotation handler - accumulates rotation angle smoothly
+  const handleRotate = (deltaRotation: number) => {
+    if (!selectedObjectId) return
+
+    setAnchoredObjects(prev => prev.map(obj => {
+      if (obj.id === selectedObjectId) {
+        const newRotation = obj.rotation + deltaRotation
+        // Keep rotation in reasonable range to avoid floating point drift
+        const normalizedRotation = newRotation > Math.PI * 4 ? newRotation - Math.PI * 4 :
+                                    newRotation < -Math.PI * 4 ? newRotation + Math.PI * 4 :
+                                    newRotation
+        return { ...obj, rotation: normalizedRotation }
+      }
+      return obj
+    }))
+  }
+
+  // Feature 4.2: Mode toggle handler
+  const handleToggleMode = () => {
+    setTransformMode(prev => {
+      const modes: TransformMode[] = ['rotate', 'scale', 'move']
+      const currentIndex = modes.indexOf(prev)
+      const nextIndex = (currentIndex + 1) % modes.length
+      console.log(`Mode changed: ${prev} → ${modes[nextIndex]}`)
+      return modes[nextIndex]
+    })
   }
 
   // Listen for select event (mirrors ar-example.html lines 118, 183-192)
@@ -273,7 +312,8 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
           setAnchoredObjects(prev => [...prev, {
             id: Math.random().toString(),
             anchor: anchor,
-            type: selectedObjectType
+            type: selectedObjectType,
+            rotation: 0  // Feature 4.2: Initialize rotation to 0
           }])
 
           // Exit draw mode after placing one object to prevent accidental placement when selecting
@@ -291,14 +331,16 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
 
   return (
     <>
-      {anchoredObjects.map(({ id, anchor, type }) => (
+      {anchoredObjects.map(({ id, anchor, type, rotation }) => (
         <SelectableObject
           key={id}
           id={id}
           anchor={anchor}
           xrRefSpace={xrRefSpace}
           type={type}
+          rotation={rotation}
           isSelected={selectedObjectId === id}
+          transformMode={transformMode}
           onSelect={(id) => {
             objectClickedRef.current = true
             setSelectedObjectId(id)
@@ -312,6 +354,17 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
         selectedObjectId={selectedObjectId}
         onDeleteSelected={handleDeleteSelected}
       />
+
+      {/* Feature 4.2: Rotation and mode controllers */}
+      <RotationController
+        selectedObjectId={selectedObjectId}
+        transformMode={transformMode}
+        onRotate={handleRotate}
+      />
+      <ModeController
+        selectedObjectId={selectedObjectId}
+        onToggleMode={handleToggleMode}
+      />
     </>
   )
 }
@@ -322,17 +375,20 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
  * Updates object position from anchor pose each frame
  * Feature 3: Supports table, bed, and sofa object types loaded from GLB files
  * Feature 4.1: Supports selection via onClick and visual feedback
+ * Feature 4.2: Supports rotation around plane normal
  */
 interface SelectableObjectProps {
   id: string
   anchor: XRAnchor
   xrRefSpace: XRReferenceSpace | null
   type: 'table' | 'bed' | 'sofa' | 'round-table'
+  rotation: number  // Feature 4.2: Rotation angle in radians
   isSelected: boolean
+  transformMode: TransformMode  // Feature 4.2: Current transform mode
   onSelect: (id: string) => void
 }
 
-function SelectableObject({ id, anchor, xrRefSpace, type, isSelected, onSelect }: SelectableObjectProps) {
+function SelectableObject({ id, anchor, xrRefSpace, type, rotation, isSelected, transformMode, onSelect }: SelectableObjectProps) {
   const groupRef = useRef<THREE.Group>(null)
   const { session } = useXR()
 
@@ -404,7 +460,7 @@ function SelectableObject({ id, anchor, xrRefSpace, type, isSelected, onSelect }
     return size.y / 2 - center.y
   }, [clonedScene])
 
-  // Update position from anchor each frame (mirrors ar-example.html lines 213-221)
+  // Feature 4.2: Update object position and rotation from anchor each frame
   useFrame((state) => {
     if (!session || !xrRefSpace || !groupRef.current) return
 
@@ -418,15 +474,28 @@ function SelectableObject({ id, anchor, xrRefSpace, type, isSelected, onSelect }
     const anchorPose = frame.getPose(anchor.anchorSpace, xrRefSpace)
     if (!anchorPose) return
 
-    // EXACTLY like ar-example.html line 220: directly assign matrix
-    // The matrix already contains correct position AND orientation:
-    // - Position: where the anchor is (on the surface)
-    // - Orientation: Y-axis = surface normal (perpendicular to plane)
-    groupRef.current.matrix.fromArray(anchorPose.transform.matrix)
+    // Decompose anchor matrix to get position and orientation
+    const anchorMatrix = new THREE.Matrix4().fromArray(anchorPose.transform.matrix)
+    const anchorPos = new THREE.Vector3()
+    const anchorQuat = new THREE.Quaternion()
+    const anchorScale = new THREE.Vector3()
+    anchorMatrix.decompose(anchorPos, anchorQuat, anchorScale)
 
-    // Offset by calculated Y offset (scaled) so the bottom of the object sits on the surface
-    const translationMatrix = new THREE.Matrix4().makeTranslation(0, yOffset * scale, 0)
-    groupRef.current.matrix.multiply(translationMatrix)
+    // Extract plane normal from anchor orientation (Y-axis)
+    const planeNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(anchorQuat)
+
+    // Position object at anchor point + offset along plane normal
+    const finalPos = anchorPos.clone().add(planeNormal.clone().multiplyScalar(yOffset * scale))
+
+    // Apply user rotation around plane normal
+    let finalQuat = anchorQuat.clone()
+    if (rotation !== 0) {
+      const rotationQuat = new THREE.Quaternion().setFromAxisAngle(planeNormal, rotation)
+      finalQuat = rotationQuat.multiply(anchorQuat)
+    }
+
+    // Update object transformation
+    groupRef.current.matrix.compose(finalPos, finalQuat, new THREE.Vector3(1, 1, 1))
   })
 
   return (
@@ -435,29 +504,224 @@ function SelectableObject({ id, anchor, xrRefSpace, type, isSelected, onSelect }
         <primitive object={clonedScene} />
       </group>
 
-      {/* Feature 4.1: Visual feedback for selection */}
-      {isSelected && <SelectionHighlight />}
+      {/* Feature 4.2: Mode-specific visual feedback */}
+      {isSelected && (
+        <ModificationVisuals
+          mode={transformMode}
+          objectRef={groupRef}
+          anchor={anchor}
+          xrRefSpace={xrRefSpace}
+        />
+      )}
     </group>
   )
 }
 
 /**
- * SelectionHighlight - Visual feedback for selected object
+ * ModificationVisuals - Container for mode-specific visual feedback
  *
- * Feature 4.1: Simple wireframe box to indicate selection
- * Will be replaced with transform axes in Feature 4.2
+ * Feature 4.2: Shows different visuals based on active transform mode
+ * - Rotate mode: Yellow ring around object
+ * - Scale mode: Placeholder (cone + torus slider - to be implemented)
+ * - Move mode: Placeholder (red axes - to be implemented)
  */
-function SelectionHighlight() {
+interface ModificationVisualsProps {
+  mode: TransformMode
+  objectRef: React.RefObject<THREE.Group | null>
+  anchor: XRAnchor
+  xrRefSpace: XRReferenceSpace | null
+}
+
+function ModificationVisuals({ mode, objectRef, anchor, xrRefSpace }: ModificationVisualsProps) {
   return (
-    <mesh position={[0, 0.5, 0]}>
-      <boxGeometry args={[0.8, 0.8, 0.8]} />
-      <meshBasicMaterial
-        color="yellow"
-        wireframe
-        opacity={0.8}
-        transparent
-      />
-    </mesh>
+    <>
+      {mode === 'rotate' && (
+        <RotateRing objectRef={objectRef} anchor={anchor} xrRefSpace={xrRefSpace} />
+      )}
+      {mode === 'scale' && (
+        // Placeholder for Feature 4.2.2
+        <mesh position={[0, 1, 0]}>
+          <boxGeometry args={[0.1, 0.1, 0.1]} />
+          <meshBasicMaterial color="green" />
+        </mesh>
+      )}
+      {mode === 'move' && (
+        // Placeholder for Feature 4.2.3
+        <mesh position={[0, 1, 0]}>
+          <boxGeometry args={[0.1, 0.1, 0.1]} />
+          <meshBasicMaterial color="red" />
+        </mesh>
+      )}
+    </>
+  )
+}
+
+/**
+ * RotateRing - Yellow ring visual for rotate mode
+ *
+ * Feature 4.2: Shows a flat ring around the selected object
+ * - Ring is parallel to the placement plane
+ * - Ring is centered on the object
+ * - Ring scales based on object bounding box (diagonal + 15cm)
+ * - Ring thickness is 7.5% of radius
+ */
+interface RotateRingProps {
+  objectRef: React.RefObject<THREE.Group | null>
+  anchor: XRAnchor  // Used by debug visualization
+  xrRefSpace: XRReferenceSpace | null  // Used by debug visualization
+}
+
+function RotateRing({ objectRef, anchor, xrRefSpace }: RotateRingProps) {
+  // Cache bounding box calculations (only compute once on mount)
+  const ringRadius = useMemo(() => {
+    if (!objectRef.current) return 0.5
+
+    const bbox = new THREE.Box3().setFromObject(objectRef.current)
+    const size = bbox.getSize(new THREE.Vector3())
+
+    // Bounding box diagonal + 15cm (0.15 meters) - reduced to hug object more
+    const diagonal = size.length()
+    return (diagonal / 2) + 0.15
+  }, [objectRef])
+
+  // Ring is a child of the object group, so it inherits the parent's transform
+  // We just need to position it at the object's center (0,0,0 in local space)
+  // and rotate it to lie flat on the plane
+  return (
+    <>
+      <mesh
+        position={[0, 0, 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
+      >
+        {/* Inner radius 92.5%, outer radius 100% = 7.5% thickness (half of previous 15%) */}
+        <ringGeometry args={[ringRadius * 0.925, ringRadius, 32]} />
+        <meshBasicMaterial color="yellow" side={THREE.DoubleSide} />
+      </mesh>
+
+      {/* Debug visualization - disable if performance issues */}
+      {ENABLE_ROTATION_DEBUG && (
+        <RotateDebugVectors objectRef={objectRef} anchor={anchor} xrRefSpace={xrRefSpace} />
+      )}
+    </>
+  )
+}
+
+/**
+ * RotateDebugVectors - Debug visualization for rotation axes
+ *
+ * Shows colored arrows to visualize:
+ * - RED: Plane normal (rotation axis) - points perpendicular to the surface
+ * - BLUE: Object's local forward direction (Z-axis)
+ * - GREEN: Object's local right direction (X-axis)
+ * - CYAN: Object's local up direction (Y-axis)
+ */
+interface RotateDebugVectorsProps {
+  objectRef: React.RefObject<THREE.Group | null>
+  anchor: XRAnchor
+  xrRefSpace: XRReferenceSpace | null
+}
+
+function RotateDebugVectors({ objectRef, anchor, xrRefSpace }: RotateDebugVectorsProps) {
+  const { session } = useXR()
+
+  // Create arrow helpers once
+  const planeNormalArrow = useMemo(() => new THREE.ArrowHelper(
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(0, 0, 0),
+    0.5,
+    0xff0000,
+    0.1,
+    0.05
+  ), [])
+
+  const objectForwardArrow = useMemo(() => new THREE.ArrowHelper(
+    new THREE.Vector3(0, 0, -1),
+    new THREE.Vector3(0, 0, 0),
+    0.4,
+    0x0000ff,
+    0.08,
+    0.04
+  ), [])
+
+  const objectRightArrow = useMemo(() => new THREE.ArrowHelper(
+    new THREE.Vector3(1, 0, 0),
+    new THREE.Vector3(0, 0, 0),
+    0.4,
+    0x00ff00,
+    0.08,
+    0.04
+  ), [])
+
+  const objectUpArrow = useMemo(() => new THREE.ArrowHelper(
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(0, 0, 0),
+    0.4,
+    0x00ffff,
+    0.08,
+    0.04
+  ), [])
+
+  useFrame((state) => {
+    if (!session || !xrRefSpace || !objectRef.current) return
+
+    const frame = state.gl.xr.getFrame()
+    if (!frame?.trackedAnchors?.has(anchor)) return
+
+    const anchorPose = frame.getPose(anchor.anchorSpace, xrRefSpace)
+    if (!anchorPose) return
+
+    // Get anchor matrix and extract basis vectors
+    const anchorMatrix = new THREE.Matrix4().fromArray(anchorPose.transform.matrix)
+
+    const planeX = new THREE.Vector3()
+    const planeNormal = new THREE.Vector3()
+    const planeZ = new THREE.Vector3()
+    anchorMatrix.extractBasis(planeX, planeNormal, planeZ)
+
+    // Get object's world matrix
+    const objectMatrix = objectRef.current.matrixWorld.clone()
+    const objectForward = new THREE.Vector3()
+    const objectRight = new THREE.Vector3()
+    const objectUp = new THREE.Vector3()
+    objectMatrix.extractBasis(objectRight, objectUp, objectForward)
+    objectForward.multiplyScalar(-1) // Three.js uses -Z as forward
+
+    // Get anchor position for arrow origin
+    const anchorPos = new THREE.Vector3()
+    anchorMatrix.decompose(anchorPos, new THREE.Quaternion(), new THREE.Vector3())
+
+    // Update arrows
+    planeNormalArrow.position.copy(anchorPos)
+    planeNormalArrow.setDirection(planeNormal.normalize())
+    planeNormalArrow.setLength(0.5, 0.1, 0.05)
+
+    objectForwardArrow.position.copy(anchorPos)
+    objectForwardArrow.setDirection(objectForward.normalize())
+    objectForwardArrow.setLength(0.4, 0.08, 0.04)
+
+    objectRightArrow.position.copy(anchorPos)
+    objectRightArrow.setDirection(objectRight.normalize())
+    objectRightArrow.setLength(0.4, 0.08, 0.04)
+
+    objectUpArrow.position.copy(anchorPos)
+    objectUpArrow.setDirection(objectUp.normalize())
+    objectUpArrow.setLength(0.4, 0.08, 0.04)
+  })
+
+  return (
+    <group>
+      {/* RED: Plane normal (rotation axis) - perpendicular to surface */}
+      <primitive object={planeNormalArrow} />
+
+      {/* BLUE: Object forward (-Z) - shows which way object is facing */}
+      <primitive object={objectForwardArrow} />
+
+      {/* GREEN: Object right (X) - shows object's local X-axis */}
+      <primitive object={objectRightArrow} />
+
+      {/* CYAN: Object up (Y) - shows object's local Y-axis */}
+      <primitive object={objectUpArrow} />
+    </group>
   )
 }
 
@@ -488,6 +752,99 @@ function SelectionController({ selectedObjectId, onDeleteSelected }: SelectionCo
       onDeleteSelected()
     }
     previousBState.current = isBPressed
+  })
+
+  return null
+}
+
+/**
+ * RotationController - Handles thumbstick input for object rotation
+ *
+ * Feature 4.2: Smooth rotation control using controller thumbsticks
+ * - Only active when object is selected and in rotate mode
+ * - Either left or right thumbstick X-axis controls rotation
+ * - If both thumbsticks active, uses the one with larger magnitude
+ * - Rotation speed: 30 degrees per second (π/6 radians/sec)
+ * - Dead zone: 0.1 to prevent drift
+ */
+interface RotationControllerProps {
+  selectedObjectId: string | null
+  transformMode: TransformMode
+  onRotate: (deltaRotation: number) => void
+}
+
+function RotationController({ selectedObjectId, transformMode, onRotate }: RotationControllerProps) {
+  const leftController = useXRInputSourceState('controller', 'left')
+  const rightController = useXRInputSourceState('controller', 'right')
+
+  useFrame((_state, delta) => {
+    // Only rotate when object selected and in rotate mode
+    if (!selectedObjectId || transformMode !== 'rotate') return
+
+    const leftThumbstick = leftController?.gamepad?.['xr-standard-thumbstick']
+    const rightThumbstick = rightController?.gamepad?.['xr-standard-thumbstick']
+
+    const leftX = leftThumbstick?.xAxis ?? 0
+    const rightX = rightThumbstick?.xAxis ?? 0
+
+    const DEAD_ZONE = 0.1
+    const leftActive = Math.abs(leftX) > DEAD_ZONE
+    const rightActive = Math.abs(rightX) > DEAD_ZONE
+
+    // Determine rotation input: use strongest thumbstick if both active
+    let rotationInput = 0
+    if (leftActive && rightActive) {
+      rotationInput = Math.abs(leftX) > Math.abs(rightX) ? leftX : rightX
+    } else if (leftActive) {
+      rotationInput = leftX
+    } else if (rightActive) {
+      rotationInput = rightX
+    }
+
+    // Apply rotation with 30°/sec speed
+    if (rotationInput !== 0) {
+      const rotationSpeed = Math.PI / 6  // 30 degrees/sec in radians
+      const deltaRotation = rotationInput * rotationSpeed * delta
+      onRotate(deltaRotation)
+    }
+  })
+
+  return null
+}
+
+/**
+ * ModeController - Handles 'A' button input for mode toggling
+ *
+ * Feature 4.2: Cycles through transform modes using right controller 'A' button
+ * - Only active when an object is selected
+ * - Mode sequence: rotate → scale → move → rotate
+ * - Edge detection prevents continuous triggering on button hold
+ */
+interface ModeControllerProps {
+  selectedObjectId: string | null
+  onToggleMode: () => void
+}
+
+function ModeController({ selectedObjectId, onToggleMode }: ModeControllerProps) {
+  const rightController = useXRInputSourceState('controller', 'right')
+  const previousAState = useRef(false)
+
+  useFrame(() => {
+    // Only allow mode toggle when object is selected
+    if (!selectedObjectId) return
+    if (!rightController?.gamepad) return
+
+    // A button detection on right controller
+    const aButton = rightController.gamepad['a-button']
+    const isAPressed = aButton?.state === 'pressed'
+
+    // Edge detection: trigger only on press (false → true transition)
+    if (isAPressed && !previousAState.current) {
+      console.log('A button pressed - toggling mode')
+      onToggleMode()
+    }
+
+    previousAState.current = isAPressed
   })
 
   return null

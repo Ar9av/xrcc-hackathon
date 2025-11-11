@@ -598,3 +598,104 @@ This prevents trigger press that opens palette from also triggering placement ac
 ### Known Issues
 
 Positioning may be inconsistent across different headsets or orientations. camera.getWorldDirection sometimes returns unexpected values (e.g., pointing down when user is looking forward). Quaternion-based forward calculation may differ from getWorldDirection. Requires further investigation with debug visualizations showing default forward, quaternion-applied forward, and projected horizontal forward.
+
+## AR Object Transformation
+
+### Rotating Objects Around Plane Normal
+
+Problem: Rotate anchored AR objects parallel to their placement plane (horizontal for floor, vertical for wall).
+
+Extract plane normal from anchor's Y-axis:
+```tsx
+const anchorMatrix = new THREE.Matrix4().fromArray(anchorPose.transform.matrix)
+const anchorPos = new THREE.Vector3()
+const anchorQuat = new THREE.Quaternion()
+anchorMatrix.decompose(anchorPos, anchorQuat, new THREE.Vector3())
+
+const planeNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(anchorQuat)
+```
+
+Create rotation around arbitrary axis:
+```tsx
+const rotationQuat = new THREE.Quaternion().setFromAxisAngle(planeNormal, rotationAngle)
+const finalQuat = rotationQuat.multiply(anchorQuat)
+```
+
+Update object position and rotation:
+```tsx
+const finalPos = anchorPos.clone().add(planeNormal.clone().multiplyScalar(yOffset))
+objectRef.current.matrix.compose(finalPos, finalQuat, new THREE.Vector3(1, 1, 1))
+```
+
+WRONG: Using Euler angles or rotating around world Y-axis only works for horizontal planes.
+CORRECT: Extract plane normal from anchor and use quaternion rotation around that axis.
+
+### Child Component Positioning
+
+Problem: Position visual indicators (rings, axes) relative to anchored objects.
+
+WRONG: Applying anchor transformation matrix to child component:
+```tsx
+// Child component applying parent's transform again
+ringRef.current.matrix.fromArray(anchorPose.transform.matrix)
+// Result: Double transformation, incorrect position
+```
+
+CORRECT: Use local coordinates since child inherits parent transform:
+```tsx
+<group ref={objectRef} matrixAutoUpdate={false}>  {/* Parent */}
+  <primitive object={model} />
+
+  {/* Child - just use local position/rotation */}
+  <mesh position={[0, 0, 0]} rotation={[-Math.PI/2, 0, 0]}>
+    <ringGeometry />
+  </mesh>
+</group>
+```
+
+Child at [0,0,0] in local space automatically centers on object. No manual matrix updates needed.
+
+### Smooth Rotation Accumulation
+
+Problem: Accumulate rotation angle smoothly from thumbstick input.
+
+WRONG: Using modulo to wrap angle:
+```tsx
+rotation = (rotation + delta) % (Math.PI * 2)
+// Results in 90° snapping, not smooth rotation
+```
+
+CORRECT: Simple accumulation with soft normalization:
+```tsx
+const newRotation = rotation + deltaRotation
+// Only normalize if exceeds large range (prevents float drift)
+const normalized = newRotation > Math.PI * 4 ? newRotation - Math.PI * 4 :
+                   newRotation < -Math.PI * 4 ? newRotation + Math.PI * 4 :
+                   newRotation
+```
+
+Allows smooth continuous rotation while preventing floating-point overflow.
+
+### Performance: Caching Bounding Box
+
+Problem: Box3.setFromObject() traverses entire hierarchy, expensive to call each frame.
+
+WRONG: Calculating bounding box every frame:
+```tsx
+useFrame(() => {
+  const bbox = new THREE.Box3().setFromObject(object)  // Expensive
+  const size = bbox.getSize(new THREE.Vector3())
+})
+```
+
+CORRECT: Cache in useMemo, recalculate only when needed:
+```tsx
+const ringRadius = useMemo(() => {
+  if (!objectRef.current) return 0.5
+  const bbox = new THREE.Box3().setFromObject(objectRef.current)
+  const size = bbox.getSize(new THREE.Vector3())
+  return (size.length() / 2) + 0.15
+}, [objectRef])  // Only recalc if object changes
+```
+
+For static objects, bounding box only needs calculation once on mount.

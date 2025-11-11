@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Canvas } from '@react-three/fiber'
-import { XR, createXRStore, useXR, XROrigin, useXRControllerLocomotion } from '@react-three/xr'
+import { XR, createXRStore, useXR, XROrigin } from '@react-three/xr'
+// Commented out: Player locomotion disabled to allow thumbsticks for object rotation only
+// import { useXRControllerLocomotion } from '@react-three/xr'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 import './App.css'
@@ -20,19 +22,22 @@ const store = createXRStore({
 /**
  * PlayerRig component handles VR locomotion (movement)
  * Uses the built-in useXRControllerLocomotion hook which handles head-relative movement automatically
+ *
+ * COMMENTED OUT: Player locomotion disabled to allow thumbsticks to control object rotation only
  */
 function PlayerRig() {
   // Reference to the XROrigin group - this is what we move for locomotion
   const originRef = useRef<THREE.Group>(null)
 
+  // COMMENTED OUT: Disable player movement so thumbsticks only control object rotation
   // Use the official hook for controller-based locomotion
   // This automatically handles:
   // - Head-relative movement (forward = where you're looking)
   // - Snap rotation with right thumbstick (comfortable for VR)
   // - Proper dead zones
-  useXRControllerLocomotion(originRef, {
-    speed: 2.0  // Movement speed (units per second)
-  })
+  // useXRControllerLocomotion(originRef, {
+  //   speed: 2.0  // Movement speed (units per second)
+  // })
 
   // Return the XROrigin component - this is the root of the player's coordinate system
   return <XROrigin ref={originRef} />

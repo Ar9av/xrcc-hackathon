@@ -46,15 +46,17 @@ The dev server runs on port 5173 with HTTPS enabled (required for WebXR). The se
   - `GrabController` - Grip button handler for grab/throw
   - AR state management for object palette and draw mode
 
-- **src/components/ARHitTestManager.tsx** - AR plane detection, object placement, selection and deletion:
+- **src/components/ARHitTestManager.tsx** - AR plane detection, object placement, selection, and transformation:
   - Hit test source creation from viewer space
   - Reticle cursor positioning on detected planes
   - Object placement via anchors on trigger press
   - Support for multiple object types (table, bed, sofa, round-table)
   - Draw mode integration (only places objects when in draw mode, auto-exits after placement)
   - Object selection with controller rays (onClick handlers)
-  - Selection visual feedback (SelectionHighlight component)
   - B button deletion (SelectionController component)
+  - Object rotation with thumbstick input (RotationController component)
+  - Mode toggling with A button (ModeController component)
+  - Transform mode visuals: RotateRing (yellow ring), scale/move placeholders
   - Flag-based deselection logic for empty space clicks
 
 - **src/components/ObjectPalette.tsx** - 3D UI palette for AR object selection:
@@ -185,6 +187,31 @@ Located in `public/asset/`:
 
 **Key Pattern:** Auto-exit draw mode after object placement prevents selecting objects from triggering duplicate placement.
 
+### Feature 4.2: Object Rotation (Rotate Mode)
+
+**State (in PlacementHandler):**
+- `transformMode`: 'rotate' | 'scale' | 'move' (default: 'rotate')
+- `rotation`: Number (radians) in anchoredObjects array per object
+- `handleRotate(deltaRotation)`: Updates rotation state
+- `handleToggleMode()`: Cycles through modes
+
+**Components (in ARHitTestManager.tsx):**
+- `RotateRing`: Yellow ring at object center [0,0,0], rotation [-π/2,0,0], radius = bbox diagonal/2 + 0.15m, thickness 7.5%
+- `RotationController`: Thumbstick X-axis input, 30°/sec, dead zone 0.1, strongest input wins when both active
+- `ModeController`: A button (right) cycles modes with edge detection
+- `ModificationVisuals`: Container that renders ring/placeholders based on mode
+
+**Rotation Logic (SelectableObject useFrame):**
+- Decompose anchor matrix → extract plane normal from Y-axis
+- Create rotation quat: `setFromAxisAngle(planeNormal, rotation)`
+- Compose: `matrix.compose(anchorPos + offset, rotationQuat * anchorQuat, scale)`
+
+**Key Patterns:**
+- Child visuals inherit parent transform - no manual matrix updates
+- Quaternion rotation around arbitrary axis for any plane orientation
+- No modulo on angle (causes snapping) - soft normalization at ±4π
+- Player locomotion disabled (commented out in App.tsx)
+
 ### Critical WebXR Patterns
 
 **XROrigin vs Camera Movement:**
@@ -284,11 +311,7 @@ const y = thumbstick?.yAxis ?? 0  // -1 to 1
    - Draw mode auto-exits after placement
    - Press Y again to select and place different object type
    - Press X to exit draw mode manually if needed
-7. Test object selection and deletion (Feature 4.1):
-   - Point controller ray at placed object and press trigger → Yellow wireframe appears
-   - Point at empty space and press trigger → Wireframe disappears (deselect)
-   - Select object again → Press B button (right controller) → Object deleted
-   - Verify selecting objects doesn't trigger duplicate placement
+7. Test Feature 4.1 (selection/deletion) and 4.2 (rotation)
 
 ## Learning Resources
 
@@ -306,4 +329,5 @@ Refer to this document when implementing new XR features or troubleshooting issu
 Additional documentation:
 - `docs/feature3-research.md` - Detailed research on object palette implementation, controller interactions, and 3D UI design patterns
 - `docs/feature4-1-research.md` - Detailed research on object selection and deletion, pointer events, button detection, and state management patterns
+- `docs/feature4-2-rotate-research.md` - Detailed research on rotate mode implementation, quaternion rotation, ring geometry, thumbstick input, and mode toggling
 - `docs/r3f-feature-exploration.md` - Feature requirements and exploration notes
