@@ -58,48 +58,85 @@ The objective of this project is to build basic features to explore and understa
 - There are 3 modes for modifying an object
     - Rotate mode
     - Scale mode
-    - Position mode
+    - Move mode
 - Toggle between the modes by using the ‘A’ button on right controller
 - The default mode is rotate mode
 - We will implement the modes one by one
+- Now that we are implementing these edit modes, we can remove the existing yellow wireframe visualisation for selected object from feature 4.1
+- While we are implementing modes one by one, the toggle button should toggle only between all the modes that have been implemented so far.
 
 ### Rotate mode behaviour
 
-- A single axis appears centred on the object when object is in rotate mode.
-- The axes should look like normal 3D axes rays
-- The axis appears perpendicular to the plane on which the object is placed
-- The axis color needs to be yellow for rotate mode
-- Object can only be rotated along this axis
-    - In technical terms the rotation is being done around the axis which is perpendicular to the plane but the visual effect is that the object stays attached to the plane at its base
-- The axes need to be always be visible even if the object is bigger than the axes (axis length must change size of object but there must be a minimum length of 0.5m)
-- Rotation is done by pointing at the axis and holding the grip button
-    - Holding and dragging up (positive direction of the axis) rotates the object counter clockwise when viewed from above the axis
-    - Holding and dragging down (negative direction of the axis) rotates the object clockwise when viewed from above the axis
+Visual description 
+
+- A flat ring (ringGeometry) appears centred on the object when object is in rotate mode. The ring should be big enough to completely surround the object
+- The ring is parallel to the plane on which object is placed but vertically in the middle of the object’s height
+- The ring is yellow in colour
+- The ring need to be always be visible even if the object is bigger than the axes (the ring must scale with the size of the object. This will be important once we implement scale mode)
+
+Rotation behaviour details
+
+- Object can only be rotated parallel to the plane on which the object is placed
+- Rotation is done by moving the right or left thumb stick
+    - Holding the thumb stick to the right rotates the object clock wise as seen from above (positive Y direction of the plane on which object is placed)
+    - Holding the thumb stick to the left rotates the object counter clock wise as seen from above (positive Y direction of the plane on which object is placed)
+- Rotation sensitivity
+    - The rotation is smooth and real time as the thumb stick is pushed and held in either direction
+    - The rotation speed is 30 degrees per second
 
 ### Scale mode behaviour
 
-- A single axis appears centred on the object when object is in rotate mode.
-- The axes should look like normal 3D axes rays
-- The axis appears perpendicular to the plane on which the object is placed
-- The axis color needs to be green for scale mode
-- The axes need to be always be visible even if the object is bigger than the axes (axis length must change size of object but there must be a minimum length of 0.5m)
-- Scaling is done by pointing at the axis and holding the grip button
-    - Holding and dragging up (positive direction of the axis) increases the size
-    - Holding and dragging down (negative direction of the axis) decreases the size
+Visual description
+
+- A slider component appears above the object in scale mode
+- The slider can be simulated as a thin cone (coneGeometry) with a torus (torusGeometry) that moves along the cone as the slider that signifies changing size
+- The cone is 1 meter in length, 20cm in diameter at the base
+- The torus has a dynamic inner diameter which changes as it slides up and done the cone.
+    - inner diameter =  x * cone_diameter/cone_height where x is the distance of the torus centre from the tip of the cone. Distance from tip can be calculated as cone_height - (distance from base)
+    - Outer diameter of torus is always inner diameter + 20cm (meaning the torus is 10 cm thick)
+- Cone is light green in color and the torus is dark green in color
+- This slider component always appears above the selected object in terms of local coordinates of the object (about 30 cm above)
+- But the orientation of the slider is always along the global Y axis with the tip of the cone pointing down and base pointing up.
+- The torus always starts at the middle of the cone
+
+Scaling behaviour details
+
+- Scaling is done by moving the right or left thumb stick
+    - Holding thumb stick forward increases the size
+    - Holding thumb stick backwards decreases the size
 - The dimension ratio is to be maintained at the original ratio when scaling. So all dimensions are scaled equally.
+- The torus moves up (towards the base of the cone) when increasing size and moves down to the tip when decreasing size.
+- The torus stops at maximum scale at the base of the cone and at minimum scale at the tip of the cone
+- The maximum increase in size allowed is 25% above the default rendering scale and the minimum is 25% below the default scale with which it is getting rendered right now
+- Slider sensitivity should be such that it moves from minimum to maximum position in 4 seconds
+- The position of the slider (cone+torus) must change as the size of the object changes so that slider doesn’t get hidden
+- The scaling should smooth and real time as the slider moves
 
-### Position mode behaviour
+### Move mode behaviour
 
-- Two perpendicular axes appear centred on the selected objected
+Visual description
+
+- Two perpendicular axes appear centred on the selected objected.
 - The axes correspond to the x and y direction of the plane in which the object was created
     - This means the axes are parallel to the plane of creation (not global X and Y)
-- The axes should look like normal 3D axes rays
-- The axis color should be red for position mode
+    - The rotation of the axis can be relative to the object’s orientation (X and Y needs to be along the object’s local X and Y)
+    - But the axes are not on the plane, they are vertically in the middle of the object’s height on that plane
+- The axes should look like normal 3D axes rays (line + cone at the end)
+- The axis color should be red
+- The axis position must move along with the object while it is moved so that it always stays centred
+- The axes must be big enough to be visible beyond the object’s X and Y dimension
+- The axes must scale with object size so that they are always visible
+
+Move behaviour
+
 - Moving a created object is only allowed along the plane in which it was created
-- The axes need to be always be visible even if the object is bigger than the axes (axis length must change size of object but there must be a minimum length of 0.5m)
-- On pointing at any axis using controller and holding with the grip button, I should be able to drag the object up and down that axis by moving my hand along the direction of that axis
-- The object moves in the direction my hand moves
+- How to move an object
+    - When in move mode, hold the grip button and drag your hand along the X and Y axis shown in move mode (local to object’s x and y)
+    - Both X and Y components of hand movement along the X and Y axis are translated to object movement along those axes
+    - on leaving the grip button the object stops moving but remains in move mode
+- The distance to move the object along each axis is determined by the distance of hand from the point where the grip button was pressed along the plane of the object
 - For example
     - An object is created on the wall
     - On selecting that object, X and Y axes appear centred on that object, parallel to the wall plane
-    - I can point at X axis, click and hold grip button to drag along the direction of the axis to move the object
+    - I can hold the grip button to drag along the X axis that appeared to move the object to along that axis
+- The moving should be smooth and real time with the movement of the hand
