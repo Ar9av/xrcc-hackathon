@@ -1,0 +1,13 @@
+.blur-text-container {
+  display: inline-block;
+  line-height: 1.2;
+  color: inherit;
+}
+
+.blur-text-word,
+.blur-text-char {
+  display: inline-block;
+  will-change: transform, opacity, filter;
+  color: inherit;
+}
+

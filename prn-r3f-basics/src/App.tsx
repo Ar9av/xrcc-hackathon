@@ -8,6 +8,7 @@ import { ARHitTestManager } from './components/ARHitTestManager'
 import { ObjectPalette } from './components/ObjectPalette'
 import { DesktopFurnitureMenu } from './components/DesktopFurnitureMenu'
 import { DesktopPlacementHandler } from './components/DesktopPlacementHandler'
+import LandingPage from './components/LandingPage'
 
 // Create XR store - manages VR/AR session state
 // Request hit-test, anchors, and plane-detection features for AR
@@ -128,6 +129,9 @@ function Scene({
 }
 
 function App() {
+  // Landing page state
+  const [showLandingPage, setShowLandingPage] = useState(true)
+
   // Feature 3 state management - Object Palette and Draw Mode
   // Shared between AR and desktop modes
   const [isPaletteVisible, setIsPaletteVisible] = useState(false)
@@ -185,8 +189,42 @@ function App() {
     setIsARMode(isAR)
   }, [])
 
+  const handleEnterAR = () => {
+    setShowLandingPage(false)
+    // Small delay to ensure landing page is hidden before entering AR
+    setTimeout(() => {
+      store.enterAR()
+    }, 100)
+  }
+
+  // Show landing page
+  if (showLandingPage) {
+    return <LandingPage onEnterAR={handleEnterAR} />
+  }
+
   return (
-    <div style={{ width: '100vw', height: '100vh' }}>
+    <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
+      {/* Back to landing page button */}
+      <button
+        onClick={() => setShowLandingPage(true)}
+        style={{
+          position: 'absolute',
+          top: '20px',
+          left: '20px',
+          zIndex: 1000,
+          padding: '10px 20px',
+          fontSize: '16px',
+          cursor: 'pointer',
+          background: 'rgba(10, 10, 10, 0.8)',
+          color: 'white',
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          borderRadius: '8px',
+          backdropFilter: 'blur(10px)'
+        }}
+      >
+        ← Back to Home
+      </button>
+
       <button
         onClick={() => store.enterAR()}
         style={{
@@ -197,7 +235,12 @@ function App() {
           zIndex: 1000,
           padding: '10px 20px',
           fontSize: '16px',
-          cursor: 'pointer'
+          cursor: 'pointer',
+          background: 'rgba(10, 10, 10, 0.8)',
+          color: 'white',
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          borderRadius: '8px',
+          backdropFilter: 'blur(10px)'
         }}
       >
         Enter AR
@@ -213,7 +256,12 @@ function App() {
           zIndex: 1000,
           padding: '10px 20px',
           fontSize: '16px',
-          cursor: 'pointer'
+          cursor: 'pointer',
+          background: 'rgba(10, 10, 10, 0.8)',
+          color: 'white',
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          borderRadius: '8px',
+          backdropFilter: 'blur(10px)'
         }}
       >
         Enter VR

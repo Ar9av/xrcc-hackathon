@@ -96,7 +96,7 @@ function PalettePanel({ visible, onSelectTable, onSelectBed, onSelectSofa, onSel
       if (debugGroupRef.current) {
         debugGroupRef.current.clear()
       }
-      console.log('🔄 Resetting position flag - palette hidden (useEffect)')
+      console.log('Resetting position flag - palette hidden (useEffect)')
     }
   }, [visible])
 
@@ -110,35 +110,35 @@ function PalettePanel({ visible, onSelectTable, onSelectBed, onSelectSofa, onSel
 
       // Get head position from matrixWorld
       const position = headPos.setFromMatrixPosition(camera.matrixWorld)
-      console.log('📍 Head position:', position.toArray())
+      console.log('Head position:', position.toArray())
 
       // Try both methods for comparison
-      console.log('🔄 Camera quaternion:', camera.quaternion.toArray())
+      console.log('Camera quaternion:', camera.quaternion.toArray())
 
       // Method 1: Using getWorldDirection()
       const forward = camera.getWorldDirection(tmpForward)
-      console.log('👁️ Forward (getWorldDirection):', forward.toArray())
+      console.log('Forward (getWorldDirection):', forward.toArray())
 
       // Method 2: Using quaternion (for comparison)
       const forwardFromQuat = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion)
-      console.log('👁️ Forward (from quaternion):', forwardFromQuat.toArray())
+      console.log('Forward (from quaternion):', forwardFromQuat.toArray())
 
       // Project forward onto horizontal plane so palette stays in front even when looking up/down
       const forwardFlat = tmpFlat.set(forward.x, 0, forward.z)
-      console.log('➡️ Forward flat (before guard):', forwardFlat.toArray(), 'lengthSq:', forwardFlat.lengthSq())
+      console.log('Forward flat (before guard):', forwardFlat.toArray(), 'lengthSq:', forwardFlat.lengthSq())
 
       // Guard against zero-vector when looking straight up/down
       if (forwardFlat.lengthSq() < 1e-4) {
-        console.log('⚠️ Zero-vector detected, using fallback')
+        console.log('Zero-vector detected, using fallback')
         forwardFlat.set(-Math.sin(camera.rotation.y), 0, -Math.cos(camera.rotation.y))
       }
       forwardFlat.normalize()
-      console.log('➡️ Forward flat (normalized):', forwardFlat.toArray())
+      console.log('Forward flat (normalized):', forwardFlat.toArray())
 
       // Place palette 1m in front, slightly below eye level for comfort
       const target = panelPos.copy(position).addScaledVector(forwardFlat, 1.0)
       target.y = position.y - 0.15
-      console.log('🎯 Target position:', target.toArray())
+      console.log('Target position:', target.toArray())
 
       panel.position.copy(target)
 
@@ -158,22 +158,22 @@ function PalettePanel({ visible, onSelectTable, onSelectBed, onSelectSofa, onSel
         const defaultForward = new THREE.Vector3(0, 0, -1)
         const arrow1 = new THREE.ArrowHelper(defaultForward.normalize(), origin, 1, 0xff0000, 0.2, 0.1)
         debugGroupRef.current.add(arrow1)
-        console.log('🔴 Default forward:', defaultForward.toArray())
+        console.log('Default forward:', defaultForward.toArray())
 
         // 2. Forward (getWorldDirection) - YELLOW
         const arrow2 = new THREE.ArrowHelper(forward.clone().normalize(), origin, 1.2, 0xffff00, 0.2, 0.1)
         debugGroupRef.current.add(arrow2)
-        console.log('🟡 Forward (getWorldDirection):', forward.toArray())
+        console.log('Forward (getWorldDirection):', forward.toArray())
 
         // 2b. Forward (from quaternion) - ORANGE (for comparison)
         const arrow2b = new THREE.ArrowHelper(forwardFromQuat.clone().normalize(), origin, 1.1, 0xff8800, 0.2, 0.1)
         debugGroupRef.current.add(arrow2b)
-        console.log('🟠 Forward (from quaternion):', forwardFromQuat.toArray())
+        console.log('Forward (from quaternion):', forwardFromQuat.toArray())
 
         // 3. Forward flat - GREEN
         const arrow3 = new THREE.ArrowHelper(forwardFlat.clone().normalize(), origin, 1, 0x00ff00, 0.2, 0.1)
         debugGroupRef.current.add(arrow3)
-        console.log('🟢 Forward flat:', forwardFlat.toArray())
+        console.log('Forward flat:', forwardFlat.toArray())
 
         // 4. Head position - BLUE line from origin
         const headLine = new THREE.Line(
@@ -181,7 +181,7 @@ function PalettePanel({ visible, onSelectTable, onSelectBed, onSelectSofa, onSel
           new THREE.LineBasicMaterial({ color: 0x0000ff })
         )
         debugGroupRef.current.add(headLine)
-        console.log('🔵 Head position:', position.toArray())
+        console.log('Head position:', position.toArray())
 
         // 5. Target position - MAGENTA line from origin
         const targetLine = new THREE.Line(
@@ -189,10 +189,10 @@ function PalettePanel({ visible, onSelectTable, onSelectBed, onSelectSofa, onSel
           new THREE.LineBasicMaterial({ color: 0xff00ff })
         )
         debugGroupRef.current.add(targetLine)
-        console.log('🟣 Target position:', target.toArray())
+        console.log('Target position:', target.toArray())
       }
 
-      console.log('✅ Palette positioned!')
+      console.log('Palette positioned!')
       positioned.current = true
     }
   })
