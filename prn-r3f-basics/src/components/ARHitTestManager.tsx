@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useMemo } from 'react'
-import { useFrame } from '@react-three/fiber'
-import { useXR } from '@react-three/xr'
+import { useFrame, type ThreeEvent } from '@react-three/fiber'
+import { useXR, useXRInputSourceState } from '@react-three/xr'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 
@@ -20,9 +20,10 @@ import * as THREE from 'three'
 interface ARHitTestManagerProps {
   isDrawMode: boolean
   selectedObjectType: 'table' | 'bed' | 'sofa' | 'round-table' | null
+  onExitDrawMode: () => void
 }
 
-export function ARHitTestManager({ isDrawMode, selectedObjectType }: ARHitTestManagerProps) {
+export function ARHitTestManager({ isDrawMode, selectedObjectType, onExitDrawMode }: ARHitTestManagerProps) {
   const { session } = useXR()
   const xrRefSpaceRef = useRef<XRReferenceSpace | null>(null)
   const hitTestSourceRef = useRef<XRHitTestSource | null>(null)
@@ -118,6 +119,7 @@ export function ARHitTestManager({ isDrawMode, selectedObjectType }: ARHitTestMa
         xrRefSpace={xrRefSpaceRef.current}
         isDrawMode={isDrawMode}
         selectedObjectType={selectedObjectType}
+        onExitDrawMode={onExitDrawMode}
       />
     </>
   )
@@ -214,15 +216,17 @@ function PlaneVisualizer({ xrRefSpace }: PlaneVisualizerProps) {
  *
  * Listens for session 'select' event and creates anchors at hit test positions
  * Feature 3: Only places objects when in draw mode with a selected object type
+ * Feature 4.1: Manages object selection and deletion
  */
 interface PlacementHandlerProps {
   hitResult: XRHitTestResult | null
   xrRefSpace: XRReferenceSpace | null
   isDrawMode: boolean
   selectedObjectType: 'table' | 'bed' | 'sofa' | 'round-table' | null
+  onExitDrawMode: () => void
 }
 
-function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectType }: PlacementHandlerProps) {
+function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectType, onExitDrawMode }: PlacementHandlerProps) {
   const { session } = useXR()
   const [anchoredObjects, setAnchoredObjects] = useState<Array<{
     id: string
@@ -230,13 +234,36 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
     type: 'table' | 'bed' | 'sofa' | 'round-table'
   }>>([])
 
+  // Feature 4.1: Selection state
+  const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null)
+  const objectClickedRef = useRef(false)
+
+  // Feature 4.1: Delete handler
+  const handleDeleteSelected = () => {
+    if (!selectedObjectId) return
+
+    console.log(`Deleting object: ${selectedObjectId}`)
+    setAnchoredObjects(prev => prev.filter(obj => obj.id !== selectedObjectId))
+    setSelectedObjectId(null)
+  }
+
   // Listen for select event (mirrors ar-example.html lines 118, 183-192)
   // Feature 3: Only place objects when in draw mode with selected type
+  // Feature 4.1: Handle selection/deselection
   useEffect(() => {
     if (!session) return
 
     const onSelect = () => {
-      // Only place objects if in draw mode with selected type
+      // Feature 4.1: Handle deselection (clicked empty space)
+      if (!objectClickedRef.current && selectedObjectId) {
+        console.log('Deselecting - clicked empty space')
+        setSelectedObjectId(null)
+      }
+
+      // Reset flag for next select event
+      objectClickedRef.current = false
+
+      // Feature 3: Only place objects if in draw mode with selected type
       if (!isDrawMode || !selectedObjectType || !hitResult || !xrRefSpace) return
 
       // Create anchor exactly like ar-example.html line 186
@@ -248,6 +275,10 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
             anchor: anchor,
             type: selectedObjectType
           }])
+
+          // Exit draw mode after placing one object to prevent accidental placement when selecting
+          console.log('Object placed - exiting draw mode')
+          onExitDrawMode()
         }).catch((error: Error) => {
           console.error("Could not create anchor: " + error)
         })
@@ -256,37 +287,60 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
 
     session.addEventListener('select', onSelect)
     return () => session.removeEventListener('select', onSelect)
-  }, [session, hitResult, xrRefSpace, isDrawMode, selectedObjectType])
+  }, [session, hitResult, xrRefSpace, isDrawMode, selectedObjectType, selectedObjectId])
 
   return (
     <>
       {anchoredObjects.map(({ id, anchor, type }) => (
-        <AnchoredObject
+        <SelectableObject
           key={id}
+          id={id}
           anchor={anchor}
           xrRefSpace={xrRefSpace}
           type={type}
+          isSelected={selectedObjectId === id}
+          onSelect={(id) => {
+            objectClickedRef.current = true
+            setSelectedObjectId(id)
+            console.log(`Object selected: ${id}`)
+          }}
         />
       ))}
+
+      {/* Feature 4.1: B button controller for deletion */}
+      <SelectionController
+        selectedObjectId={selectedObjectId}
+        onDeleteSelected={handleDeleteSelected}
+      />
     </>
   )
 }
 
 /**
- * AnchoredObject - Renders GLB model (table, bed, or sofa) that tracks anchor position
+ * SelectableObject - Renders GLB model (table, bed, or sofa) that tracks anchor position
  *
  * Updates object position from anchor pose each frame
  * Feature 3: Supports table, bed, and sofa object types loaded from GLB files
+ * Feature 4.1: Supports selection via onClick and visual feedback
  */
-interface AnchoredObjectProps {
+interface SelectableObjectProps {
+  id: string
   anchor: XRAnchor
   xrRefSpace: XRReferenceSpace | null
   type: 'table' | 'bed' | 'sofa' | 'round-table'
+  isSelected: boolean
+  onSelect: (id: string) => void
 }
 
-function AnchoredObject({ anchor, xrRefSpace, type }: AnchoredObjectProps) {
+function SelectableObject({ id, anchor, xrRefSpace, type, isSelected, onSelect }: SelectableObjectProps) {
   const groupRef = useRef<THREE.Group>(null)
   const { session } = useXR()
+
+  // Feature 4.1: Handle click for selection
+  const handleClick = (event: ThreeEvent<MouseEvent>) => {
+    event.stopPropagation() // Prevent triggering deselection
+    onSelect(id)
+  }
 
   // Load the appropriate GLB model
   const modelPath = type === 'round-table' ? '/asset/round-table.glb' : `/asset/${type}.glb`
@@ -376,12 +430,67 @@ function AnchoredObject({ anchor, xrRefSpace, type }: AnchoredObjectProps) {
   })
 
   return (
-    <group ref={groupRef} matrixAutoUpdate={false}>
+    <group ref={groupRef} matrixAutoUpdate={false} onClick={handleClick}>
       <group scale={scale}>
         <primitive object={clonedScene} />
       </group>
+
+      {/* Feature 4.1: Visual feedback for selection */}
+      {isSelected && <SelectionHighlight />}
     </group>
   )
+}
+
+/**
+ * SelectionHighlight - Visual feedback for selected object
+ *
+ * Feature 4.1: Simple wireframe box to indicate selection
+ * Will be replaced with transform axes in Feature 4.2
+ */
+function SelectionHighlight() {
+  return (
+    <mesh position={[0, 0.5, 0]}>
+      <boxGeometry args={[0.8, 0.8, 0.8]} />
+      <meshBasicMaterial
+        color="yellow"
+        wireframe
+        opacity={0.8}
+        transparent
+      />
+    </mesh>
+  )
+}
+
+/**
+ * SelectionController - Handles B button input for deletion
+ *
+ * Feature 4.1: Monitors right controller B button and triggers deletion
+ */
+interface SelectionControllerProps {
+  selectedObjectId: string | null
+  onDeleteSelected: () => void
+}
+
+function SelectionController({ selectedObjectId, onDeleteSelected }: SelectionControllerProps) {
+  const rightController = useXRInputSourceState('controller', 'right')
+  const previousBState = useRef(false)
+
+  useFrame(() => {
+    if (!rightController?.gamepad) return
+
+    // B button detection on right controller
+    const bButton = rightController.gamepad['b-button']
+    const isBPressed = bButton?.state === 'pressed'
+
+    // Edge detection: trigger only on press (false → true transition)
+    if (isBPressed && !previousBState.current && selectedObjectId) {
+      console.log('B button pressed - deleting selected object')
+      onDeleteSelected()
+    }
+    previousBState.current = isBPressed
+  })
+
+  return null
 }
 
 // Preload models for better performance
