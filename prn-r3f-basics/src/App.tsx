@@ -17,7 +17,7 @@ const store = createXRStore({
   ar: {
     requiredFeatures: ['hit-test', 'anchors', 'plane-detection'],
   }
-})
+} as any)
 
 /**
  * PlayerRig component handles VR locomotion (movement)
@@ -94,6 +94,7 @@ function Scene({
           <ARHitTestManager
             isDrawMode={isDrawMode}
             selectedObjectType={selectedObjectType}
+            onExitDrawMode={onExitDrawMode}
           />
           <ObjectPalette
             isVisible={isPaletteVisible}
