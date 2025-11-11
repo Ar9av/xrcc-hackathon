@@ -46,12 +46,16 @@ The dev server runs on port 5173 with HTTPS enabled (required for WebXR). The se
   - `GrabController` - Grip button handler for grab/throw
   - AR state management for object palette and draw mode
 
-- **src/components/ARHitTestManager.tsx** - AR plane detection and object placement:
+- **src/components/ARHitTestManager.tsx** - AR plane detection, object placement, selection and deletion:
   - Hit test source creation from viewer space
   - Reticle cursor positioning on detected planes
   - Object placement via anchors on trigger press
-  - Support for multiple object types (block, pyramid, furniture)
-  - Draw mode integration (only places objects when in draw mode)
+  - Support for multiple object types (table, bed, sofa, round-table)
+  - Draw mode integration (only places objects when in draw mode, auto-exits after placement)
+  - Object selection with controller rays (onClick handlers)
+  - Selection visual feedback (SelectionHighlight component)
+  - B button deletion (SelectionController component)
+  - Flag-based deselection logic for empty space clicks
 
 - **src/components/ObjectPalette.tsx** - 3D UI palette for AR object selection:
   - `ObjectPalette` - Main component managing palette and button input
@@ -138,6 +142,48 @@ Located in `public/asset/`:
 - Palette positioning inconsistent - sometimes appears on floor, sometimes to the right
 - camera.getWorldDirection() occasionally returns unexpected values (e.g., pointing down when user looking forward)
 - Debug visualizations added to troubleshoot: shows default forward, quaternion-applied forward, forward flat, head position, target position as colored rays from origin
+
+### Feature 4.1: Object Selection and Deletion
+
+**Purpose:** Allow users to select and delete placed AR objects using controller interactions.
+
+**User Workflow:**
+1. Point controller ray at placed object → Press trigger → Object selected (yellow wireframe appears)
+2. Point at empty space → Press trigger → Object deselected (wireframe disappears)
+3. With object selected → Press B button (right controller) → Object deleted
+4. Draw mode auto-exits after placing object to prevent accidental duplicates
+
+**State Management (in PlacementHandler component):**
+- `selectedObjectId`: String | null tracking currently selected object
+- `objectClickedRef`: Ref flag to distinguish object clicks from empty space clicks
+- `anchoredObjects`: Array of placed objects with IDs for deletion
+
+**Controller Button Mapping:**
+- Trigger button: Select object OR deselect (context-dependent)
+- B button (right controller): Delete currently selected object
+
+**Implementation Details:**
+- **SelectableObject** - Renamed from AnchoredObject with added props:
+  - `id`: Unique identifier for selection tracking
+  - `isSelected`: Boolean for visual feedback
+  - `onSelect`: Callback with `event.stopPropagation()` to prevent deselection
+  - `onClick` handler uses @react-three/xr pointer events (automatic raycasting)
+
+- **SelectionHighlight** - Visual feedback component:
+  - Yellow wireframe box positioned at [0, 0.5, 0]
+  - Temporary indicator (will be replaced with transform axes in Feature 4.2)
+
+- **SelectionController** - B button detection:
+  - Uses `useXRInputSourceState('controller', 'right')`
+  - Edge detection with `previousBState` ref (false → true transition)
+  - Only triggers deletion when `selectedObjectId` exists
+
+- **Deselection Logic** - Flag-based approach:
+  - Objects set `objectClickedRef.current = true` in onClick before session 'select' event
+  - Session 'select' handler checks flag: if false and selection exists → deselect
+  - Prevents conflict between placement and selection (both use trigger)
+
+**Key Pattern:** Auto-exit draw mode after object placement prevents selecting objects from triggering duplicate placement.
 
 ### Critical WebXR Patterns
 
@@ -231,12 +277,18 @@ const y = thumbstick?.yAxis ?? 0  // -1 to 1
 3. Click "Enter AR" button
 4. Allow camera permissions
 5. Move device to scan environment for plane detection
-6. Test object palette workflow:
+6. Test object palette workflow (Feature 3):
    - Press Y to open palette
    - Point at object and press trigger to select
    - Point at detected plane and press trigger to place
-   - Press X to exit draw mode
-   - Press Y again to select different object type
+   - Draw mode auto-exits after placement
+   - Press Y again to select and place different object type
+   - Press X to exit draw mode manually if needed
+7. Test object selection and deletion (Feature 4.1):
+   - Point controller ray at placed object and press trigger → Yellow wireframe appears
+   - Point at empty space and press trigger → Wireframe disappears (deselect)
+   - Select object again → Press B button (right controller) → Object deleted
+   - Verify selecting objects doesn't trigger duplicate placement
 
 ## Learning Resources
 
@@ -253,4 +305,5 @@ Refer to this document when implementing new XR features or troubleshooting issu
 
 Additional documentation:
 - `docs/feature3-research.md` - Detailed research on object palette implementation, controller interactions, and 3D UI design patterns
+- `docs/feature4-1-research.md` - Detailed research on object selection and deletion, pointer events, button detection, and state management patterns
 - `docs/r3f-feature-exploration.md` - Feature requirements and exploration notes
