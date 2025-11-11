@@ -55,7 +55,6 @@
 .nav-logo-icon {
   font-size: 24px;
   animation: float 3s ease-in-out infinite;
-  filter: drop-shadow(0 2px 4px rgba(99, 102, 241, 0.3));
 }
 
 @keyframes float {
@@ -66,19 +65,8 @@
 .nav-logo-text {
   font-size: 20px;
   font-weight: 800;
-  background: linear-gradient(135deg, #00d4ff 0%, #7c3aed 30%, #ec4899 60%, #f59e0b 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: #ffffff;
   letter-spacing: -0.01em;
-  filter: drop-shadow(0 0 8px rgba(0, 212, 255, 0.4));
-  animation: gradient-shift 3s ease infinite;
-  background-size: 200% 200%;
-}
-
-@keyframes gradient-shift {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
 }
 
 .nav-divider {
@@ -118,7 +106,7 @@
 }
 
 .hero-3d-container {
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
   right: 0;
@@ -127,6 +115,7 @@
   height: 100%;
   z-index: 0;
   opacity: 0.6;
+  pointer-events: none;
 }
 
 .hero-content {

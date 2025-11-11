@@ -1,6 +1,6 @@
-import { useRef } from 'react'
+import { useRef, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { Mesh, Group } from 'three'
+import { Mesh, Group, BufferAttribute } from 'three'
 import * as THREE from 'three'
 
 export function FloatingFurniture() {
@@ -37,11 +37,18 @@ export function FloatingFurniture() {
 export function ParticleField() {
   const particlesRef = useRef<THREE.Points>(null)
   const count = 200
-  const positions = new Float32Array(count * 3)
+  
+  const positions = useMemo(() => {
+    const pos = new Float32Array(count * 3)
+    for (let i = 0; i < count * 3; i++) {
+      pos[i] = (Math.random() - 0.5) * 20
+    }
+    return pos
+  }, [count])
 
-  for (let i = 0; i < count * 3; i++) {
-    positions[i] = (Math.random() - 0.5) * 20
-  }
+  const positionAttribute = useMemo(() => {
+    return new BufferAttribute(positions, 3)
+  }, [positions])
 
   useFrame((state) => {
     if (particlesRef.current) {
@@ -53,12 +60,7 @@ export function ParticleField() {
   return (
     <points ref={particlesRef}>
       <bufferGeometry>
-        <bufferAttribute
-          attach="attributes-position"
-          count={count}
-          array={positions}
-          itemSize={3}
-        />
+        <primitive object={positionAttribute} attach="attributes-position" />
       </bufferGeometry>
       <pointsMaterial size={0.1} color="#6366f1" transparent opacity={0.6} />
     </points>
