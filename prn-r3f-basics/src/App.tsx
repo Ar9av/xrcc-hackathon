@@ -15,7 +15,6 @@ import LandingPage from './components/LandingPage'
 // Create XR store - manages VR/AR session state
 // Request hit-test, anchors, and plane-detection features for AR
 const store = createXRStore({
-  // @ts-expect-error - ar property exists at runtime but types may be outdated
   ar: {
     requiredFeatures: ['hit-test', 'anchors', 'plane-detection'],
   }
