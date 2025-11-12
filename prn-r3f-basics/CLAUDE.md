@@ -136,7 +136,7 @@ Located in `public/asset/`:
 - `bed.glb` - 3D furniture model
 - `sofa.glb` - 3D furniture model
 - `table.glb` - 3D furniture model
-- `images/bed.webp` - Palette button texture
+- `images/bed.png` - Palette button texture
 - `images/sofa.webp` - Palette button texture
 - `images/table.png` - Palette button texture
 

@@ -81,9 +81,9 @@ function PalettePanel({ visible, onSelectTable, onSelectBed, onSelectSofa, onSel
 
   // Load images
   const tableTexture = useLoader(TextureLoader, '/asset/images/table.png')
-  const bedTexture = useLoader(TextureLoader, '/asset/images/bed.webp')
+  const bedTexture = useLoader(TextureLoader, '/asset/images/bed.png')
   const sofaTexture = useLoader(TextureLoader, '/asset/images/sofa.png')
-  const roundTableTexture = useLoader(TextureLoader, '/asset/images/round-table.jpg')
+  const roundTableTexture = useLoader(TextureLoader, '/asset/images/round-table.png')
 
   // Debug visualization refs
   const debugGroupRef = useRef<THREE.Group>(null)

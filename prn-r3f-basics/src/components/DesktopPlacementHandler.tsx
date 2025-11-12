@@ -150,10 +150,10 @@ function DesktopPlacedObject({ position, type }: DesktopPlacedObjectProps) {
     return cloned
   }, [scene])
 
-  // Scale factors: table 90% (10% reduction), bed 20% (80% reduction), sofa 100%, round-table 100%
+  // Scale factors: table 90% (10% reduction), bed 50% (50% reduction), sofa 100%, round-table 100%
   const scale = useMemo(() => {
-    if (type === 'table') return 0.9
-    if (type === 'bed') return 0.2
+    if (type === 'table') return 1.2
+    if (type === 'bed') return 0.9
     return 1.0
   }, [type])
 

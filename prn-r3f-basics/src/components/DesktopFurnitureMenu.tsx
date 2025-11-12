@@ -40,7 +40,7 @@ export function DesktopFurnitureMenu({
           title={selectedObjectType === 'bed' ? 'Cancel Selection' : 'Place Bed'}
         >
           <div className="icon-container">
-            <img src="/asset/images/bed.webp" alt="Bed" className="furniture-icon" />
+            <img src="/asset/images/bed.png" alt="Bed" className="furniture-icon" />
           </div>
           <span className="item-label">Bed</span>
         </button>
@@ -62,7 +62,7 @@ export function DesktopFurnitureMenu({
           title={selectedObjectType === 'round-table' ? 'Cancel Selection' : 'Place Round Table'}
         >
           <div className="icon-container">
-            <img src="/asset/images/round-table.jpg" alt="Round Table" className="furniture-icon" />
+            <img src="/asset/images/round-table.png" alt="Round Table" className="furniture-icon" />
           </div>
           <span className="item-label">Round Table</span>
         </button>
