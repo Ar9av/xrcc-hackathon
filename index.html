@@ -2,31 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>WebXR Sample (Three.js + Vite)</title>
-    <meta name="description" content="Minimal WebXR sample with Three.js (VR + AR)">
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext x='50' y='60' font-size='60' text-anchor='middle'%3EXR%3C/text%3E%3C/svg%3E">
-    <link rel="stylesheet" href="/src/style.css" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DecoratAR - AR Home Staging Solution</title>
   </head>
   <body>
-    <header class="app-header">
-      <h1>WebXR Sample</h1>
-      <p>Three.js + Vite • Works on desktop VR and mobile AR (HTTPS required for AR)</p>
-    </header>
-
-    <main class="app-main">
-      <div id="app"></div>
-      <div class="buttons">
-        <!-- XR buttons are injected by JS (VRButton/ARButton) -->
-      </div>
-    </main>
-
-    <footer class="app-footer">
-      <small>Tip: For AR, open on a WebXR-capable mobile device over HTTPS.</small>
-    </footer>
-
-    <script type="module" src="/src/main.js"></script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
-  </html>
-
-
+</html>
