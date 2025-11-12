@@ -102,6 +102,7 @@ function Scene({
             isDrawMode={isDrawMode}
             selectedObjectType={selectedObjectType}
             onExitDrawMode={onExitDrawMode}
+            isPaletteVisible={isPaletteVisible}
           />
           <ObjectPalette
             isVisible={isPaletteVisible}
@@ -215,7 +216,7 @@ function App() {
     <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
       {/* Landing page overlay - shown on top when active */}
       {showLandingPage && (
-        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 100 }}>
+        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 1000, pointerEvents: 'auto' }}>
           <LandingPage onEnterAR={handleEnterAR} onEnterDefaultView={handleEnterDefaultView} />
         </div>
       )}
@@ -255,7 +256,7 @@ function App() {
         />
       )}
 
-      <Canvas>
+      <Canvas style={{ pointerEvents: showLandingPage ? 'none' : 'auto' }}>
         <XR store={store}>
           <ARModeDetector onModeChange={handleModeChange} />
           <Scene

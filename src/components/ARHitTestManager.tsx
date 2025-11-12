@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react'
-import { useFrame, type ThreeEvent } from '@react-three/fiber'
+import { useFrame, type ThreeEvent, useThree } from '@react-three/fiber'
 import { useXR, useXRInputSourceState } from '@react-three/xr'
-import { useGLTF } from '@react-three/drei'
+import { useGLTF, Text } from '@react-three/drei'
 import * as THREE from 'three'
 
 // Feature 4.2: Debug flag for rotation visualization
@@ -29,9 +29,10 @@ interface ARHitTestManagerProps {
   isDrawMode: boolean
   selectedObjectType: 'table' | 'bed' | 'sofa' | 'round-table' | null
   onExitDrawMode: () => void
+  isPaletteVisible: boolean
 }
 
-export function ARHitTestManager({ isDrawMode, selectedObjectType, onExitDrawMode }: ARHitTestManagerProps) {
+export function ARHitTestManager({ isDrawMode, selectedObjectType, onExitDrawMode, isPaletteVisible }: ARHitTestManagerProps) {
   const { session } = useXR()
   const xrRefSpaceRef = useRef<XRReferenceSpace | null>(null)
   const hitTestSourceRef = useRef<XRHitTestSource | null>(null)
@@ -128,6 +129,7 @@ export function ARHitTestManager({ isDrawMode, selectedObjectType, onExitDrawMod
         isDrawMode={isDrawMode}
         selectedObjectType={selectedObjectType}
         onExitDrawMode={onExitDrawMode}
+        isPaletteVisible={isPaletteVisible}
       />
     </>
   )
@@ -232,12 +234,13 @@ interface PlacementHandlerProps {
   isDrawMode: boolean
   selectedObjectType: 'table' | 'bed' | 'sofa' | 'round-table' | null
   onExitDrawMode: () => void
+  isPaletteVisible: boolean
 }
 
 // Feature 4.2: Transform mode type
 type TransformMode = 'rotate' | 'scale' | 'move'
 
-function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectType, onExitDrawMode }: PlacementHandlerProps) {
+function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectType, onExitDrawMode, isPaletteVisible }: PlacementHandlerProps) {
   const { session } = useXR()
   const [anchoredObjects, setAnchoredObjects] = useState<Array<{
     id: string
@@ -405,6 +408,14 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
       <ModeController
         selectedObjectId={selectedObjectId}
         onToggleMode={handleToggleMode}
+      />
+
+      {/* Controller tooltips - shows button instructions based on current state */}
+      <ControllerTooltips
+        isPaletteVisible={isPaletteVisible}
+        isDrawMode={isDrawMode}
+        selectedObjectId={selectedObjectId}
+        transformMode={transformMode}
       />
     </>
   )
@@ -1051,6 +1062,205 @@ function ScaleController({ selectedObjectId, transformMode, onScale }: ScaleCont
 interface ModeControllerProps {
   selectedObjectId: string | null
   onToggleMode: () => void
+}
+
+/**
+ * ControllerTooltips - Displays tooltips attached to controllers showing button instructions
+ *
+ * Tooltips change based on current state:
+ * - Default: Left shows "Y - open object palette", Right shows nothing
+ * - Palette open: Left shows "LT - select object", Right shows "RT - select object"
+ * - Draw mode: Left shows "LT - place object", Right shows "RT - place object"
+ * - Object selected (rotate/scale/move): Shows mode-specific instructions
+ */
+interface ControllerTooltipsProps {
+  isPaletteVisible: boolean
+  isDrawMode: boolean
+  selectedObjectId: string | null
+  transformMode: TransformMode
+}
+
+function ControllerTooltips({ isPaletteVisible, isDrawMode, selectedObjectId, transformMode }: ControllerTooltipsProps) {
+  const leftController = useXRInputSourceState('controller', 'left')
+  const rightController = useXRInputSourceState('controller', 'right')
+  const leftTooltipRef = useRef<THREE.Group>(null)
+  const rightTooltipRef = useRef<THREE.Group>(null)
+  const { camera } = useThree()
+
+  // Determine tooltip text based on state
+  const getTooltipText = (hand: 'left' | 'right'): string | null => {
+    // Object selected states take priority
+    if (selectedObjectId) {
+      if (transformMode === 'rotate') {
+        if (hand === 'left') {
+          return 'Thumb stick left/right - rotate\nY - open object palette'
+        } else {
+          return 'Thumb stick left/right - rotate\nA - toggle mode\nB - delete object'
+        }
+      } else if (transformMode === 'scale') {
+        if (hand === 'left') {
+          return 'Thumb stick forward - increase size\nThumb stick back - decrease size\nY - open object palette'
+        } else {
+          return 'Thumb stick forward - increase size\nThumb stick back - decrease size\nA - toggle mode\nB - delete object'
+        }
+      } else if (transformMode === 'move') {
+        if (hand === 'left') {
+          return 'Grip hold + drag - move object\nY - open object palette'
+        } else {
+          return 'Grip hold + drag - move object\nA - toggle mode\nB - delete object'
+        }
+      }
+    }
+
+    // Palette open state
+    if (isPaletteVisible) {
+      if (hand === 'left') {
+        return 'LT - select object'
+      } else {
+        return 'RT - select object'
+      }
+    }
+
+    // Draw mode state
+    if (isDrawMode) {
+      if (hand === 'left') {
+        return 'LT - place object'
+      } else {
+        return 'RT - place object'
+      }
+    }
+
+    // Default state
+    if (hand === 'left') {
+      return 'Y - open object palette'
+    } else {
+      return null  // No tooltip for right controller in default state
+    }
+  }
+
+  const leftText = getTooltipText('left')
+  const rightText = getTooltipText('right')
+
+  // Debug: Log state changes (can be removed later)
+  useEffect(() => {
+    console.log('Tooltip state:', {
+      isPaletteVisible,
+      isDrawMode,
+      selectedObjectId,
+      transformMode,
+      leftText,
+      rightText
+    })
+  }, [isPaletteVisible, isDrawMode, selectedObjectId, transformMode, leftText, rightText])
+
+  // Calculate background size based on text content (approximate)
+  const getBackgroundSize = (text: string | null): [number, number] => {
+    if (!text) return [0.15, 0.08]
+    const lines = text.split('\n').length
+    const maxLineLength = Math.max(...text.split('\n').map(line => line.length))
+    // Width: ~0.008 per character, min 0.15, max 0.25 (chip shape - wider)
+    // Height: ~0.02 per line, min 0.08, add padding
+    const width = Math.max(0.15, Math.min(0.25, maxLineLength * 0.008))
+    const height = Math.max(0.08, lines * 0.02 + 0.02)
+    return [width, height]
+  }
+
+  const leftBgSize = getBackgroundSize(leftText)
+  const rightBgSize = getBackgroundSize(rightText)
+
+  // Create rounded rectangle shape for chip appearance
+  const createChipShape = (width: number, height: number, radius: number) => {
+    const shape = new THREE.Shape()
+    const x = width / 2
+    const y = height / 2
+    
+    // Create rounded rectangle path
+    shape.moveTo(-x + radius, -y)
+    shape.lineTo(x - radius, -y)
+    shape.quadraticCurveTo(x, -y, x, -y + radius)
+    shape.lineTo(x, y - radius)
+    shape.quadraticCurveTo(x, y, x - radius, y)
+    shape.lineTo(-x + radius, y)
+    shape.quadraticCurveTo(-x, y, -x, y - radius)
+    shape.lineTo(-x, -y + radius)
+    shape.quadraticCurveTo(-x, -y, -x + radius, -y)
+    
+    return shape
+  }
+
+  // Position tooltips relative to controllers
+  useFrame(() => {
+    if (leftController?.object && leftTooltipRef.current && leftText) {
+      // Get controller world position
+      const controllerPos = new THREE.Vector3()
+      leftController.object.getWorldPosition(controllerPos)
+      
+      // Position tooltip above controller (offset upward and slightly forward)
+      leftTooltipRef.current.position.copy(controllerPos)
+      leftTooltipRef.current.position.y += 0.15  // 15cm above controller
+      
+      // Make tooltip face camera (billboard effect)
+      leftTooltipRef.current.lookAt(camera.position)
+    }
+
+    if (rightController?.object && rightTooltipRef.current && rightText) {
+      const controllerPos = new THREE.Vector3()
+      rightController.object.getWorldPosition(controllerPos)
+      
+      rightTooltipRef.current.position.copy(controllerPos)
+      rightTooltipRef.current.position.y += 0.15
+      
+      // Make tooltip face camera (billboard effect)
+      rightTooltipRef.current.lookAt(camera.position)
+    }
+  })
+
+  return (
+    <>
+      {leftText && (
+        <group ref={leftTooltipRef} visible={!!leftController?.object}>
+          {/* Chip-shaped background */}
+          <mesh position={[0, 0, -0.01]}>
+            <shapeGeometry args={[createChipShape(leftBgSize[0], leftBgSize[1], 0.02)]} />
+            <meshBasicMaterial color="black" opacity={0.4} transparent />
+          </mesh>
+          <Text
+            position={[0, 0, 0]}
+            fontSize={0.01}
+            color="white"
+            anchorX="center"
+            anchorY="middle"
+            maxWidth={leftBgSize[0] - 0.02}
+            outlineWidth={0.0005}
+            outlineColor="black"
+          >
+            {leftText}
+          </Text>
+        </group>
+      )}
+      {rightText && (
+        <group ref={rightTooltipRef} visible={!!rightController?.object}>
+          {/* Chip-shaped background */}
+          <mesh position={[0, 0, -0.01]}>
+            <shapeGeometry args={[createChipShape(rightBgSize[0], rightBgSize[1], 0.02)]} />
+            <meshBasicMaterial color="black" opacity={0.4} transparent />
+          </mesh>
+          <Text
+            position={[0, 0, 0]}
+            fontSize={0.01}
+            color="white"
+            anchorX="center"
+            anchorY="middle"
+            maxWidth={rightBgSize[0] - 0.02}
+            outlineWidth={0.0005}
+            outlineColor="black"
+          >
+            {rightText}
+          </Text>
+        </group>
+      )}
+    </>
+  )
 }
 
 function ModeController({ selectedObjectId, onToggleMode }: ModeControllerProps) {
