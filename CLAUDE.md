@@ -136,9 +136,11 @@ Located in `public/asset/`:
 - `bed.glb` - 3D furniture model
 - `sofa.glb` - 3D furniture model
 - `table.glb` - 3D furniture model
+- `round-table.glb` - 3D furniture model
 - `images/bed.png` - Palette button texture
-- `images/sofa.webp` - Palette button texture
+- `images/sofa.png` - Palette button texture
 - `images/table.png` - Palette button texture
+- `images/round-table.png` - Palette button texture
 
 **Known Issues:**
 - Palette positioning inconsistent - sometimes appears on floor, sometimes to the right
@@ -353,4 +355,5 @@ Additional documentation:
 - `docs/feature3-research.md` - Detailed research on object palette implementation, controller interactions, and 3D UI design patterns
 - `docs/feature4-1-research.md` - Detailed research on object selection and deletion, pointer events, button detection, and state management patterns
 - `docs/feature4-2-rotate-research.md` - Detailed research on rotate mode implementation, quaternion rotation, ring geometry, thumbstick input, and mode toggling
+- `docs/feature4-2-scale-research.md` - Detailed research on scale mode implementation, cone+torus slider UI, TorusGeometry parameters, and parent transform inheritance
 - `docs/r3f-feature-exploration.md` - Feature requirements and exploration notes
