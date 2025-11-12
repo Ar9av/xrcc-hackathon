@@ -142,10 +142,11 @@ Located in `public/asset/`:
 - `images/table.png` - Palette button texture
 - `images/round-table.png` - Palette button texture
 
-**Known Issues:**
-- Palette positioning inconsistent - sometimes appears on floor, sometimes to the right
-- camera.getWorldDirection() occasionally returns unexpected values (e.g., pointing down when user looking forward)
-- Debug visualizations added to troubleshoot: shows default forward, quaternion-applied forward, forward flat, head position, target position as colored rays from origin
+**Fixed Issues:**
+- Palette positioning was inconsistent - appeared on floor or wrong location
+- **Root Cause**: `camera.getWorldDirection()` bug in WebXR (Three.js issues #19891, #16382, #19084)
+- **Solution**: Use `forward.setFromMatrixColumn(camera.matrixWorld, 2).negate()` instead
+- This extracts direction directly from the live camera matrix, avoiding stale quaternion data
 
 ### Feature 4.1: Object Selection and Deletion
 
@@ -238,6 +239,23 @@ Located in `public/asset/`:
 - **Fix**: Moved to PlacementHandler level → now renders in true world space without inheriting object rotation/position
 
 ### Critical WebXR Patterns
+
+**CRITICAL: Camera Forward Direction Bug:**
+In WebXR, `camera.getWorldDirection()` is **broken**. It returns incorrect directions because it uses stale quaternion data instead of the live `matrixWorld`.
+
+```tsx
+// ✗ Wrong - Returns incorrect direction in WebXR
+const forward = camera.getWorldDirection(new THREE.Vector3())
+
+// ✓ Correct - Extract directly from matrixWorld
+const forward = new THREE.Vector3()
+forward.setFromMatrixColumn(camera.matrixWorld, 2).negate()
+```
+
+This bug affects:
+- AR UI positioning (menus, palettes) - critical
+- Any "where is the user looking" calculation
+- Forward vector can be completely opposite to actual view direction
 
 **XROrigin vs Camera Movement:**
 In WebXR, NEVER move the camera directly. Always move the `XROrigin` component, which acts as the root of the player's coordinate system. The VR headset controls camera position relative to this origin.

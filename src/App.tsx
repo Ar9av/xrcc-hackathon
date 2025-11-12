@@ -12,6 +12,9 @@ import { DesktopFurnitureMenu } from './components/DesktopFurnitureMenu'
 import { DesktopPlacementHandler } from './components/DesktopPlacementHandler'
 import LandingPage from './components/LandingPage'
 
+// Debug flag for grid helper
+const ENABLE_GRID_HELPER = false
+
 // Create XR store - manages VR/AR session state
 // Request hit-test, anchors, and plane-detection features for AR
 const store = createXRStore({
@@ -127,7 +130,7 @@ function Scene({
       <directionalLight position={[10, 10, 5]} intensity={1} />
 
       {/* Grid helper for better spatial awareness - 50x50 grid, 1 unit cells */}
-      <gridHelper args={[50, 50, 'gray', 'darkgray']} position={[0, 0.01, 0]} />
+      {ENABLE_GRID_HELPER && <gridHelper args={[50, 50, 'gray', 'darkgray']} position={[0, 0.01, 0]} />}
 
       {/* Orbit controls only active in non-XR mode (desktop viewing) */}
       <OrbitControls />

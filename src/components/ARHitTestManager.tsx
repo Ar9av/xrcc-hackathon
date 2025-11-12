@@ -8,6 +8,10 @@ import * as THREE from 'three'
 // Set to false to hide debug axes and improve performance
 const ENABLE_ROTATION_DEBUG = false
 
+// Debug flag for plane detection visualization
+// Set to false to hide plane wireframes and improve performance
+const ENABLE_PLANE_VISUALIZATION = false
+
 /**
  * ARHitTestManager - Main component for AR plane detection and object placement
  *
@@ -116,7 +120,7 @@ export function ARHitTestManager({ isDrawMode, selectedObjectType, onExitDrawMod
       </mesh>
 
       {/* Plane visualizer - shows detected planes for debugging */}
-      <PlaneVisualizer xrRefSpace={xrRefSpaceRef.current} />
+      {ENABLE_PLANE_VISUALIZATION && <PlaneVisualizer xrRefSpace={xrRefSpaceRef.current} />}
 
       {/* Placement handler - manages object placement and anchors */}
       <PlacementHandler
