@@ -1155,13 +1155,13 @@ function ControllerTooltips({ isPaletteVisible, isDrawMode, selectedObjectId, tr
 
   // Calculate background size based on text content (approximate)
   const getBackgroundSize = (text: string | null): [number, number] => {
-    if (!text) return [0.15, 0.08]
+    if (!text) return [0.1, 0.05]
     const lines = text.split('\n').length
     const maxLineLength = Math.max(...text.split('\n').map(line => line.length))
-    // Width: ~0.008 per character, min 0.15, max 0.25 (chip shape - wider)
-    // Height: ~0.02 per line, min 0.08, add padding
-    const width = Math.max(0.15, Math.min(0.25, maxLineLength * 0.008))
-    const height = Math.max(0.08, lines * 0.02 + 0.02)
+    // Width: ~0.005 per character, min 0.1, max 0.15 (chip shape - wider)
+    // Height: ~0.012 per line, min 0.05, add padding
+    const width = Math.max(0.1, Math.min(0.15, maxLineLength * 0.005))
+    const height = Math.max(0.05, lines * 0.012 + 0.012)
     return [width, height]
   }
 
@@ -1221,17 +1221,17 @@ function ControllerTooltips({ isPaletteVisible, isDrawMode, selectedObjectId, tr
         <group ref={leftTooltipRef} visible={!!leftController?.object}>
           {/* Chip-shaped background */}
           <mesh position={[0, 0, -0.01]}>
-            <shapeGeometry args={[createChipShape(leftBgSize[0], leftBgSize[1], 0.02)]} />
-            <meshBasicMaterial color="black" opacity={0.4} transparent />
+            <shapeGeometry args={[createChipShape(leftBgSize[0], leftBgSize[1], 0.01)]} />
+            <meshBasicMaterial color="#1a1a1a" opacity={1.0} />
           </mesh>
           <Text
             position={[0, 0, 0]}
-            fontSize={0.01}
+            fontSize={0.007}
             color="white"
             anchorX="center"
             anchorY="middle"
-            maxWidth={leftBgSize[0] - 0.02}
-            outlineWidth={0.0005}
+            maxWidth={leftBgSize[0] - 0.01}
+            outlineWidth={0.0003}
             outlineColor="black"
           >
             {leftText}
@@ -1242,17 +1242,17 @@ function ControllerTooltips({ isPaletteVisible, isDrawMode, selectedObjectId, tr
         <group ref={rightTooltipRef} visible={!!rightController?.object}>
           {/* Chip-shaped background */}
           <mesh position={[0, 0, -0.01]}>
-            <shapeGeometry args={[createChipShape(rightBgSize[0], rightBgSize[1], 0.02)]} />
-            <meshBasicMaterial color="black" opacity={0.4} transparent />
+            <shapeGeometry args={[createChipShape(rightBgSize[0], rightBgSize[1], 0.01)]} />
+            <meshBasicMaterial color="#1a1a1a" opacity={1.0} />
           </mesh>
           <Text
             position={[0, 0, 0]}
-            fontSize={0.01}
+            fontSize={0.007}
             color="white"
             anchorX="center"
             anchorY="middle"
-            maxWidth={rightBgSize[0] - 0.02}
-            outlineWidth={0.0005}
+            maxWidth={rightBgSize[0] - 0.01}
+            outlineWidth={0.0003}
             outlineColor="black"
           >
             {rightText}

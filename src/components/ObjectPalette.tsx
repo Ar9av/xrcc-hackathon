@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from 'react'
 import { useFrame, useLoader } from '@react-three/fiber'
 import { useXRInputSourceState } from '@react-three/xr'
+import { Text } from '@react-three/drei'
 import * as THREE from 'three'
 import { TextureLoader } from 'three'
 
@@ -79,11 +80,29 @@ function PalettePanel({ visible, onSelectTable, onSelectBed, onSelectSofa, onSel
   const [sofaHovered, setSofaHovered] = useState(false)
   const [roundTableHovered, setRoundTableHovered] = useState(false)
 
-  // Load images
-  const tableTexture = useLoader(TextureLoader, '/asset/images/table.png')
-  const bedTexture = useLoader(TextureLoader, '/asset/images/bed.png')
-  const sofaTexture = useLoader(TextureLoader, '/asset/images/sofa.png')
-  const roundTableTexture = useLoader(TextureLoader, '/asset/images/round-table.png')
+  // Load images with error handling and proper texture configuration
+  const tableTexture = useLoader(TextureLoader, '/asset/images/table.png', undefined, (error) => {
+    console.error('Failed to load table texture:', error)
+  })
+  const bedTexture = useLoader(TextureLoader, '/asset/images/bed.png', undefined, (error) => {
+    console.error('Failed to load bed texture:', error)
+  })
+  const sofaTexture = useLoader(TextureLoader, '/asset/images/sofa.png', undefined, (error) => {
+    console.error('Failed to load sofa texture:', error)
+  })
+  const roundTableTexture = useLoader(TextureLoader, '/asset/images/round-table.png', undefined, (error) => {
+    console.error('Failed to load round-table texture:', error)
+  })
+
+  // Configure textures for proper display
+  useEffect(() => {
+    [tableTexture, bedTexture, sofaTexture, roundTableTexture].forEach(texture => {
+      if (texture) {
+        texture.flipY = true
+        texture.needsUpdate = true
+      }
+    })
+  }, [tableTexture, bedTexture, sofaTexture, roundTableTexture])
 
   // Debug visualization refs
   // const debugGroupRef = useRef<THREE.Group>(null)
@@ -183,103 +202,133 @@ function PalettePanel({ visible, onSelectTable, onSelectBed, onSelectSofa, onSel
 
       {/* Palette UI - hide with visible prop instead of returning null to ensure cleanup */}
       <group ref={groupRef} visible={visible}>
-        {/* Panel background - using BasicMaterial so it's visible without lighting */}
+        {/* Panel background - opaque dark background, larger to accommodate gaps and labels */}
         <mesh position={[0, 0, 0]}>
-          <planeGeometry args={[2.0, 0.6]} />
-          <meshBasicMaterial color="#666666" opacity={0.95} transparent />
+          <planeGeometry args={[0.7, 0.75]} />
+          <meshBasicMaterial color="#1a1a1a" opacity={1.0} />
         </mesh>
 
-        {/* Table button - left side */}
-        <mesh
-          position={[-0.4, 0, 0.01]}
-          onClick={() => {
-            // console.log('Table selected!')
-            onSelectTable()
-          }}
-          onPointerOver={() => setTableHovered(true)}
-          onPointerOut={() => setTableHovered(false)}
-        >
-          <planeGeometry args={[0.3, 0.3]} />
-          <meshBasicMaterial 
-            map={tableTexture} 
-            transparent 
-            opacity={tableHovered ? 1.0 : 0.8}
-          />
-        </mesh>
-        {/* Table label background */}
-        <mesh position={[-0.4, -0.2, 0.01]}>
-          <planeGeometry args={[0.3, 0.1]} />
-          <meshBasicMaterial color={tableHovered ? '#ffff00' : '#888888'} opacity={0.9} transparent />
-        </mesh>
+        {/* 2x2 Grid Layout with gaps and labels */}
+        {/* Grid spacing: 0.3 image size + 0.05 gap = 0.35 spacing between centers */}
+        {/* Top-left: Round Table */}
+        <group position={[-0.175, 0.2, 0.01]}>
+          <mesh
+            onClick={() => {
+              // console.log('Round Table selected!')
+              onSelectRoundTable()
+            }}
+            onPointerOver={() => setRoundTableHovered(true)}
+            onPointerOut={() => setRoundTableHovered(false)}
+          >
+            <planeGeometry args={[0.3, 0.3]} />
+            <meshBasicMaterial 
+              map={roundTableTexture} 
+              transparent 
+              opacity={roundTableHovered ? 1.0 : 0.9}
+            />
+          </mesh>
+          <Text
+            position={[0, -0.2, 0.01]}
+            fontSize={0.03}
+            color="white"
+            anchorX="center"
+            anchorY="middle"
+            outlineWidth={0.002}
+            outlineColor="black"
+          >
+            round-table
+          </Text>
+        </group>
 
-        {/* Bed button - center */}
-        <mesh
-          position={[0, 0, 0.01]}
-          onClick={() => {
-            // console.log('Bed selected!')
-            onSelectBed()
-          }}
-          onPointerOver={() => setBedHovered(true)}
-          onPointerOut={() => setBedHovered(false)}
-        >
-          <planeGeometry args={[0.3, 0.3]} />
-          <meshBasicMaterial 
-            map={bedTexture} 
-            transparent 
-            opacity={bedHovered ? 1.0 : 0.8}
-          />
-        </mesh>
-        {/* Bed label background */}
-        <mesh position={[0, -0.2, 0.01]}>
-          <planeGeometry args={[0.3, 0.1]} />
-          <meshBasicMaterial color={bedHovered ? '#ffff00' : '#888888'} opacity={0.9} transparent />
-        </mesh>
+        {/* Top-right: Bed */}
+        <group position={[0.175, 0.2, 0.01]}>
+          <mesh
+            onClick={() => {
+              // console.log('Bed selected!')
+              onSelectBed()
+            }}
+            onPointerOver={() => setBedHovered(true)}
+            onPointerOut={() => setBedHovered(false)}
+          >
+            <planeGeometry args={[0.3, 0.3]} />
+            <meshBasicMaterial 
+              map={bedTexture} 
+              transparent 
+              opacity={bedHovered ? 1.0 : 0.9}
+            />
+          </mesh>
+          <Text
+            position={[0, -0.2, 0.01]}
+            fontSize={0.03}
+            color="white"
+            anchorX="center"
+            anchorY="middle"
+            outlineWidth={0.002}
+            outlineColor="black"
+          >
+            bed
+          </Text>
+        </group>
 
-        {/* Sofa button - right side */}
-        <mesh
-          position={[0.4, 0, 0.01]}
-          onClick={() => {
-            // console.log('Sofa selected!')
-            onSelectSofa()
-          }}
-          onPointerOver={() => setSofaHovered(true)}
-          onPointerOut={() => setSofaHovered(false)}
-        >
-          <planeGeometry args={[0.3, 0.3]} />
-          <meshBasicMaterial 
-            map={sofaTexture} 
-            transparent 
-            opacity={sofaHovered ? 1.0 : 0.8}
-          />
-        </mesh>
-        {/* Sofa label background */}
-        <mesh position={[0.4, -0.2, 0.01]}>
-          <planeGeometry args={[0.3, 0.1]} />
-          <meshBasicMaterial color={sofaHovered ? '#ffff00' : '#888888'} opacity={0.9} transparent />
-        </mesh>
+        {/* Bottom-left: Table */}
+        <group position={[-0.175, -0.2, 0.01]}>
+          <mesh
+            onClick={() => {
+              // console.log('Table selected!')
+              onSelectTable()
+            }}
+            onPointerOver={() => setTableHovered(true)}
+            onPointerOut={() => setTableHovered(false)}
+          >
+            <planeGeometry args={[0.3, 0.3]} />
+            <meshBasicMaterial 
+              map={tableTexture} 
+              transparent 
+              opacity={tableHovered ? 1.0 : 0.9}
+            />
+          </mesh>
+          <Text
+            position={[0, -0.2, 0.01]}
+            fontSize={0.03}
+            color="white"
+            anchorX="center"
+            anchorY="middle"
+            outlineWidth={0.002}
+            outlineColor="black"
+          >
+            table
+          </Text>
+        </group>
 
-        {/* Round Table button - far right side */}
-        <mesh
-          position={[0.8, 0, 0.01]}
-          onClick={() => {
-            // console.log('Round Table selected!')
-            onSelectRoundTable()
-          }}
-          onPointerOver={() => setRoundTableHovered(true)}
-          onPointerOut={() => setRoundTableHovered(false)}
-        >
-          <planeGeometry args={[0.3, 0.3]} />
-          <meshBasicMaterial 
-            map={roundTableTexture} 
-            transparent 
-            opacity={roundTableHovered ? 1.0 : 0.8}
-          />
-        </mesh>
-        {/* Round Table label background */}
-        <mesh position={[0.8, -0.2, 0.01]}>
-          <planeGeometry args={[0.3, 0.1]} />
-          <meshBasicMaterial color={roundTableHovered ? '#ffff00' : '#888888'} opacity={0.9} transparent />
-        </mesh>
+        {/* Bottom-right: Sofa */}
+        <group position={[0.175, -0.2, 0.01]}>
+          <mesh
+            onClick={() => {
+              // console.log('Sofa selected!')
+              onSelectSofa()
+            }}
+            onPointerOver={() => setSofaHovered(true)}
+            onPointerOut={() => setSofaHovered(false)}
+          >
+            <planeGeometry args={[0.3, 0.3]} />
+            <meshBasicMaterial 
+              map={sofaTexture} 
+              transparent 
+              opacity={sofaHovered ? 1.0 : 0.9}
+            />
+          </mesh>
+          <Text
+            position={[0, -0.2, 0.01]}
+            fontSize={0.03}
+            color="white"
+            anchorX="center"
+            anchorY="middle"
+            outlineWidth={0.002}
+            outlineColor="black"
+          >
+            sofa
+          </Text>
+        </group>
       </group>
     </>
   )
