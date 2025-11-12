@@ -699,3 +699,141 @@ const ringRadius = useMemo(() => {
 ```
 
 For static objects, bounding box only needs calculation once on mount.
+
+## AR Object Scaling with Slider UI
+
+### Visual Slider Component
+
+Problem: Display cone+torus slider UI above selected AR object to provide visual feedback for scaling operations.
+
+Requirement: Cone 1m tall, 0.2m diameter at base, tip pointing down. Torus moves along cone as object scales, with dynamic sizing based on cone geometry. Slider positioned perpendicular to placement plane, always oriented along global Y-axis.
+
+### TorusGeometry Parameters
+
+WRONG: Using inner radius as torus radius parameter:
+```tsx
+const innerDiameter = distanceFromTip * (0.2 / 1.0)
+const innerRadius = innerDiameter / 2
+new THREE.TorusGeometry(innerRadius, 0.05, 16, 32)
+// Result: Torus too small, doesn't match cone profile
+```
+
+CORRECT: Torus radius is distance from center to tube center:
+```tsx
+const innerRadius = innerDiameter / 2
+const tubeRadius = 0.05  // 5cm constant
+const torusRadius = innerRadius + tubeRadius
+new THREE.TorusGeometry(torusRadius, tubeRadius, 16, 32)
+```
+
+Why: TorusGeometry first parameter is radius to tube center, not inner radius. Outer diameter = (radius + tubeRadius) * 2. For matching cone profile, radius = innerRadius + tubeRadius.
+
+### Cone Coordinate System After Rotation
+
+Problem: Position torus correctly on cone after rotating cone 180° to point tip down.
+
+Default ConeGeometry: Origin at geometric center, tip at +Y, base at -Y.
+After 180° rotation around X-axis: Tip at -Y, base at +Y in local space.
+
+WRONG: Using pre-rotation coordinates:
+```tsx
+const yPos = 0.5 - distanceFromTip  // Inverted
+// Result: Torus moves toward tip when scaling up
+```
+
+CORRECT: Account for rotation in position calculation:
+```tsx
+const yPos = distanceFromTip - 0.5
+// At scale 0.75 (min): yPos = -0.5 (tip)
+// At scale 1.25 (max): yPos = +0.5 (base)
+```
+
+Scaling up increases distanceFromTip, which increases Y position, moving torus toward base.
+
+### Torus Orientation
+
+Problem: Align torus hole with cone's vertical axis.
+
+Default TorusGeometry: Hole oriented along Z-axis in local space.
+Cone after rotation: Vertical axis along Y.
+
+WRONG: No rotation applied:
+```tsx
+<mesh position={[0, yPos, 0]}>
+  <torusGeometry />
+</mesh>
+// Result: Torus perpendicular to cone axis
+```
+
+CORRECT: Rotate 90° around X-axis:
+```tsx
+<mesh position={[0, yPos, 0]} rotation={[Math.PI / 2, 0, 0]}>
+  <torusGeometry />
+</mesh>
+```
+
+Aligns torus hole with cone's Y-axis for proper slider appearance.
+
+### Parent Transform Inheritance
+
+Problem: World-space UI elements rendered as children inherit parent's transformation matrix, even when setting world-space positions.
+
+WRONG: Rendering slider as child of object group:
+```tsx
+<group ref={objectRef} matrixAutoUpdate={false}>  {/* Has rotation/position */}
+  <primitive object={model} />
+  <ScaleSlider />  {/* Inherits parent transform */}
+</group>
+
+// Inside ScaleSlider
+sliderRef.current.position.copy(worldPosition)  // Interpreted as local coords
+// Result: Slider displaced and rotated incorrectly
+```
+
+CORRECT: Render slider as sibling at same hierarchy level:
+```tsx
+<React.Fragment>
+  <SelectableObject />  {/* Has own transform */}
+  <ScaleSlider />       {/* Independent world-space */}
+</React.Fragment>
+```
+
+Why: Three.js interprets all position assignments relative to parent's coordinate system. Even matrix.fromArray() or position.copy() of world coordinates are transformed by parent's inverse matrix. For world-space UI, render outside transformed object hierarchy.
+
+### Actual Object Dimensions
+
+Problem: Position slider fixed distance above object's actual height, not hardcoded estimate.
+
+WRONG: Using hardcoded height estimate:
+```tsx
+const unscaledHeight = 0.5  // Guess
+const scaledHeight = unscaledHeight * baseScale * scale
+// Result: Slider intersects some objects, too far from others
+```
+
+CORRECT: Calculate from loaded GLB model:
+```tsx
+const { scene } = useGLTF(modelPath)
+const unscaledHeight = useMemo(() => {
+  const bbox = new THREE.Box3().setFromObject(scene)
+  const size = bbox.getSize(new THREE.Vector3())
+  return size.y
+}, [scene])
+```
+
+Load model in slider component, cache height in useMemo. Multiply by baseScale and userScale for actual current height. Position slider at anchor + (height + clearance) * planeNormal.
+
+### Controller Input Direction
+
+Problem: Thumbstick Y-axis positive when pushed forward, but coordinate system may require inversion.
+
+Test both directions:
+```tsx
+// Without inversion
+const deltaScale = scaleInput * scaleSpeed * delta
+
+// With inversion
+const deltaScale = -scaleInput * scaleSpeed * delta
+```
+
+Verify with device: Forward thumbstick should increase size, torus should move toward cone base. If behavior is inverted, negate deltaScale. Depends on how torus position formula maps scale to Y coordinate and cone orientation.

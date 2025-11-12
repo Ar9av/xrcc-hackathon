@@ -215,6 +215,12 @@ Located in `public/asset/`:
 - Base scale factors: table=0.9, bed=0.25, sofa/round-table=1.0
 - User scale range: 0.75 to 1.25 (75% to 125%)
 - Applied to model group, not parent group (visuals remain at anchor position)
+- Slider components:
+  - Cone: 1m tall, 0.1m radius, rotated 180° to point tip down
+  - Torus: Radius = innerRadius + tubeRadius (0.05m), rotated 90° on X-axis to align with cone
+  - Torus position: `yPos = distanceFromTip - 0.5` (accounts for cone rotation)
+  - Actual object height from GLB using Box3.setFromObject, cached in useMemo
+  - Positioned at anchor + (scaledHeight + 0.5m) * planeNormal
 
 **Key Patterns:**
 - Child visuals inherit parent transform - no manual matrix updates needed for rotate ring

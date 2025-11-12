@@ -1167,19 +1167,23 @@ innerRadius = distanceFromTip * 0.1  (cone radius / cone height)
 
 ### Current Status
 
-**Working**:
+**All Features Working**:
 - ✅ Scaling input direction (forward = increase, backward = decrease)
-- ✅ Slider position (correctly at anchor point)
+- ✅ Slider position (uses actual object height from GLB models)
 - ✅ Slider orientation (identity quaternion for global Y)
-- ✅ Torus animation and sizing
+- ✅ Torus animation and sizing (correct formula with tube radius)
+- ✅ Torus movement direction (moves to base when scaling up)
+- ✅ Torus orientation (hole aligned with cone Y-axis)
 - ✅ Scale state persistence
 - ✅ Mode toggling with A button
 
-**Known Issues** (to be fixed):
-1. Slider position may need adjustment relative to object height
-2. Slider orientation may need refinement for different plane angles
-3. Cone may not always point straight down in global Y direction
-4. Distance from object may need tweaking
+**Final Fixes Applied**:
+1. TorusGeometry radius = innerRadius + tubeRadius (line 860)
+2. Tube radius = 0.05m (5cm) instead of 0.1m (line 908)
+3. Torus position formula accounts for cone rotation: yPos = distanceFromTip - 0.5 (line 864)
+4. Torus rotation [Math.PI/2, 0, 0] aligns hole with cone (line 907)
+5. Controller input inverted: deltaScale = -scaleInput * scaleSpeed * delta (line 1064)
+6. Actual object height calculated from GLB model using useMemo (lines 838-842)
 
 **Debug Visualizations** (currently disabled):
 - Green arrow: Object's anchor position

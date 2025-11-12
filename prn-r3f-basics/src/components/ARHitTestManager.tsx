@@ -372,6 +372,7 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
               <ScaleSlider
                 anchor={anchor}
                 xrRefSpace={xrRefSpace}
+                type={type}
                 scale={scale}
                 baseScale={type === 'table' ? 0.9 : type === 'bed' ? 0.25 : 1.0}
               />
@@ -429,27 +430,7 @@ function SelectableObject({ id, anchor, xrRefSpace, type, rotation, scale, isSel
   const groupRef = useRef<THREE.Group>(null)
   const { session } = useXR()
 
-  // Debug: Arrow to visualize object's anchor position (DISABLED)
-  // const objectAnchorArrow = useMemo(() => new THREE.ArrowHelper(
-  //   new THREE.Vector3(0, 1, 0),
-  //   new THREE.Vector3(0, 0, 0),
-  //   1.0,  // 1m long
-  //   0x00ff00,  // Green color
-  //   0.15,
-  //   0.08
-  // ), [])
-
-  // Debug: Arrow to visualize object's local origin (DISABLED)
-  // const objectOriginArrow = useMemo(() => new THREE.ArrowHelper(
-  //   new THREE.Vector3(0, 1, 0),
-  //   new THREE.Vector3(0, 0, 0),
-  //   0.8,  // 0.8m long
-  //   0xff0000,  // Red color
-  //   0.12,
-  //   0.06
-  // ), [])
-
-  // Feature 4.1: Handle click for selection
+  // Handle click for selection (Feature 4.1)
   const handleClick = (event: ThreeEvent<MouseEvent>) => {
     event.stopPropagation() // Prevent triggering deselection
     onSelect(id)
@@ -544,16 +525,8 @@ function SelectableObject({ id, anchor, xrRefSpace, type, rotation, scale, isSel
     // Extract plane normal from anchor orientation (Y-axis)
     const planeNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(anchorQuat)
 
-    // Debug: Update object's anchor position arrow (green) - DISABLED
-    // objectAnchorArrow.position.copy(anchorPos)
-    // objectAnchorArrow.setDirection(planeNormal.normalize())
-
     // Position object at anchor point + offset along plane normal
     const finalPos = anchorPos.clone().add(planeNormal.clone().multiplyScalar(yOffset * finalScale))
-
-    // Debug: Update object's local origin arrow (red) - DISABLED
-    // objectOriginArrow.position.copy(finalPos)
-    // objectOriginArrow.setDirection(planeNormal.normalize())
 
     // Apply user rotation around plane normal
     let finalQuat = anchorQuat.clone()
@@ -567,31 +540,21 @@ function SelectableObject({ id, anchor, xrRefSpace, type, rotation, scale, isSel
   })
 
   return (
-    <>
-      {/* Debug: Green arrow at anchor position, Red arrow at object origin - DISABLED */}
-      {/* {isSelected && (
-        <>
-          <primitive object={objectAnchorArrow} />
-          <primitive object={objectOriginArrow} />
-        </>
-      )} */}
-
-      <group ref={groupRef} matrixAutoUpdate={false} onClick={handleClick}>
-        <group scale={finalScale}>
-          <primitive object={clonedScene} />
-        </group>
-
-        {/* Feature 4.2: Mode-specific visual feedback (rotate/move only, scale is rendered outside) */}
-        {isSelected && (
-          <ModificationVisuals
-            mode={transformMode}
-            objectRef={groupRef}
-            anchor={anchor}
-            xrRefSpace={xrRefSpace}
-          />
-        )}
+    <group ref={groupRef} matrixAutoUpdate={false} onClick={handleClick}>
+      <group scale={finalScale}>
+        <primitive object={clonedScene} />
       </group>
-    </>
+
+      {/* Feature 4.2: Mode-specific visual feedback (rotate/move only, scale is rendered outside) */}
+      {isSelected && (
+        <ModificationVisuals
+          mode={transformMode}
+          objectRef={groupRef}
+          anchor={anchor}
+          xrRefSpace={xrRefSpace}
+        />
+      )}
+    </group>
   )
 }
 
@@ -799,59 +762,77 @@ function RotateDebugVectors({ objectRef, anchor, xrRefSpace }: RotateDebugVector
 /**
  * ScaleSlider - Visual slider for scale mode
  *
- * Feature 4.2: Shows a cone + torus slider above the selected object
- * - Cone: 1m tall, 0.1m radius (20cm diameter), light green, tip pointing down
- * - Torus: Dynamic sizing based on scale, dark green, moves along cone
- * - Positioned perpendicular to placement plane with fixed 50cm clearance
- * - Oriented parallel to global Y-axis (always vertical)
- * - Torus starts at middle of cone (represents 100% scale)
- * - Rendered outside object hierarchy to avoid transform inheritance
+ * Feature 4.2: Shows a cone + torus slider above the selected object for visual scaling feedback.
+ *
+ * Cone: 1m tall, 0.1m radius (20cm diameter), light green, tip pointing down (180° rotated).
+ *
+ * Torus: Dynamic sizing and positioning based on scale value.
+ *   - Tube radius: 5cm (constant)
+ *   - Main radius: innerRadius + tubeRadius (distance from center to tube center)
+ *   - Inner diameter formula: distanceFromTip * (cone_diameter / cone_height)
+ *   - Position: accounts for cone rotation (yPos = distanceFromTip - 0.5)
+ *   - Orientation: 90° rotation on X-axis to align hole with cone's Y-axis
+ *   - Movement: moves toward base when scaling up, toward tip when scaling down
+ *
+ * Positioning: Perpendicular to placement plane with 50cm clearance above actual object height.
+ *   - Height calculated from GLB model using Box3.setFromObject (cached in useMemo)
+ *   - Position = anchor + (scaledHeight + 0.5m) * planeNormal
+ *
+ * Orientation: Always aligned with global Y-axis (identity quaternion).
+ *
+ * Hierarchy: Rendered at PlacementHandler level (sibling of SelectableObject) to avoid
+ * inheriting parent transforms. World-space positioning requires independent hierarchy.
  */
 interface ScaleSliderProps {
   anchor: XRAnchor
   xrRefSpace: XRReferenceSpace | null
+  type: 'table' | 'bed' | 'sofa' | 'round-table'
   scale: number  // User scale multiplier (0.75 to 1.25)
-  baseScale: number  // Asset-specific base scale
+  baseScale: number  // Asset-specific base scale factor
 }
 
-function ScaleSlider({ anchor, xrRefSpace, scale, baseScale }: ScaleSliderProps) {
+function ScaleSlider({ anchor, xrRefSpace, type, scale, baseScale }: ScaleSliderProps) {
   const sliderGroupRef = useRef<THREE.Group>(null)
   const { session } = useXR()
 
-  // Debug: Arrow to visualize anchor normal - DISABLED
-  // const anchorNormalArrow = useMemo(() => new THREE.ArrowHelper(
-  //   new THREE.Vector3(0, 1, 0),
-  //   new THREE.Vector3(0, 0, 0),
-  //   1.5,  // 1.5m long for visibility
-  //   0xff00ff,  // Magenta color
-  //   0.2,
-  //   0.1
-  // ), [])
+  // Load GLB model to calculate actual object dimensions
+  const modelPath = type === 'round-table' ? '/asset/round-table.glb' : `/asset/${type}.glb`
+  const { scene } = useGLTF(modelPath)
 
-  // Approximate object heights (unscaled) based on asset type
-  // These are rough estimates - ideally would be calculated from actual models
-  const unscaledHeight = 0.5  // Default estimate for positioning
+  // Cache unscaled object height (expensive to recalculate each frame)
+  const unscaledHeight = useMemo(() => {
+    const box = new THREE.Box3().setFromObject(scene)
+    const size = box.getSize(new THREE.Vector3())
+    return size.y
+  }, [scene])
 
-  // Calculate torus parameters from scale
+  // Calculate torus geometry parameters and position from scale value
   const { torusRadius, torusYPosition } = useMemo(() => {
-    // Map scale (0.75 to 1.25) to distance from tip (0 to 1m)
+    // Map scale (0.75 to 1.25) to distance from cone tip (0m to 1m)
     const distanceFromTip = (scale - 0.75) / 0.5 * 1.0
 
-    // Inner diameter formula: distanceFromTip * (cone_diameter / cone_height)
-    // cone_diameter = 0.2m (20cm), cone_height = 1.0m
-    const innerDiameter = distanceFromTip * (0.2 / 1.0)
+    // Calculate inner diameter using cone profile formula
+    // Formula: distanceFromTip * (cone_diameter / cone_height)
+    // At tip (0m): 0cm inner diameter
+    // At base (1m): 20cm inner diameter
+    const coneDiameter = 0.2  // 20cm
+    const coneHeight = 1.0    // 1m
+    const innerDiameter = distanceFromTip * (coneDiameter / coneHeight)
     const innerRadius = innerDiameter / 2
 
-    // Minimum radius to avoid degenerate geometry
-    const radius = Math.max(0.01, innerRadius)
+    // Torus parameters: 5cm tube radius (constant), main radius = innerRadius + tubeRadius
+    // TorusGeometry first param is distance from torus center to tube center
+    const tubeRadius = 0.05
+    const radius = Math.max(0.01, innerRadius + tubeRadius)  // Min to avoid degenerate geometry
 
-    // Position on cone (tip at +0.5m, base at -0.5m due to geometric center)
-    const yPos = 0.5 - distanceFromTip
+    // Calculate Y position on cone (rotated 180° so tip at -0.5, base at +0.5)
+    // Scaling up increases distanceFromTip, which increases Y, moving torus toward base
+    const yPos = distanceFromTip - 0.5
 
     return { torusRadius: radius, torusYPosition: yPos }
   }, [scale])
 
-  // Update slider position each frame
+  // Update slider position each frame to track object and maintain clearance
   useFrame((state) => {
     if (!session || !xrRefSpace || !sliderGroupRef.current) return
 
@@ -861,51 +842,43 @@ function ScaleSlider({ anchor, xrRefSpace, scale, baseScale }: ScaleSliderProps)
     const anchorPose = frame.getPose(anchor.anchorSpace, xrRefSpace)
     if (!anchorPose) return
 
-    // Extract anchor position and plane normal
+    // Extract anchor position and orientation from pose matrix
     const anchorMatrix = new THREE.Matrix4().fromArray(anchorPose.transform.matrix)
     const anchorPos = new THREE.Vector3()
     const anchorQuat = new THREE.Quaternion()
     anchorMatrix.decompose(anchorPos, anchorQuat, new THREE.Vector3())
 
+    // Plane normal is anchor's Y-axis (perpendicular to placement surface)
     const planeNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(anchorQuat)
 
-    // Debug: Update anchor normal arrow - DISABLED
-    // anchorNormalArrow.position.copy(anchorPos)
-    // anchorNormalArrow.setDirection(planeNormal.normalize())
-
-    // Calculate scaled height (unscaled height * base scale * user scale)
+    // Calculate current object height (accounts for base scale and user scale)
     const scaledHeight = unscaledHeight * baseScale * scale
 
-    // Position slider: anchor + (scaledHeight + clearance) * normal
-    const clearance = 0.5  // 50cm above object
+    // Position slider 50cm above object top, along plane normal
+    const clearance = 0.5
     const sliderPos = anchorPos.clone()
       .add(planeNormal.clone().multiplyScalar(scaledHeight + clearance))
 
     sliderGroupRef.current.position.copy(sliderPos)
 
-    // Set orientation to global Y (identity quaternion = global axes)
+    // Orient slider along global Y-axis (identity quaternion)
     sliderGroupRef.current.quaternion.set(0, 0, 0, 1)
   })
 
   return (
-    <>
-      {/* Debug: Magenta arrow showing anchor position and plane normal - DISABLED */}
-      {/* <primitive object={anchorNormalArrow} /> */}
+    <group ref={sliderGroupRef}>
+      {/* Cone: 1m tall, 0.1m radius, light green, rotated 180° to point tip down */}
+      <mesh rotation={[Math.PI, 0, 0]}>
+        <coneGeometry args={[0.1, 1.0, 16]} />
+        <meshBasicMaterial color="#90EE90" side={THREE.DoubleSide} />
+      </mesh>
 
-      <group ref={sliderGroupRef}>
-        {/* Cone: 1m tall, 0.1m radius, tip pointing down */}
-        <mesh rotation={[Math.PI, 0, 0]}>
-          <coneGeometry args={[0.1, 1.0, 16]} />
-          <meshBasicMaterial color="#90EE90" side={THREE.DoubleSide} />
-        </mesh>
-
-        {/* Torus: dynamic size and position */}
-        <mesh position={[0, torusYPosition, 0]}>
-          <torusGeometry args={[torusRadius, 0.1, 16, 32]} />
-          <meshBasicMaterial color="#006400" />
-        </mesh>
-      </group>
-    </>
+      {/* Torus: dynamic radius and position, dark green, rotated 90° to align with cone */}
+      <mesh position={[0, torusYPosition, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[torusRadius, 0.05, 16, 32]} />
+        <meshBasicMaterial color="#006400" />
+      </mesh>
+    </group>
   )
 }
 
@@ -999,13 +972,21 @@ function RotationController({ selectedObjectId, transformMode, onRotate }: Rotat
 /**
  * ScaleController - Handles thumbstick input for object scaling
  *
- * Feature 4.2: Smooth scaling control using controller thumbsticks
- * - Only active when object is selected and in scale mode
- * - Either left or right thumbstick Y-axis controls scaling
- * - If both thumbsticks active, uses the one with larger magnitude
- * - Forward (positive Y) increases size, backward (negative Y) decreases size
- * - Scaling speed: 12.5% per second (4 seconds for full range 75% to 125%)
- * - Dead zone: 0.1 to prevent drift
+ * Feature 4.2: Smooth scaling control using controller thumbstick Y-axis.
+ *
+ * Input: Left or right thumbstick Y-axis (forward/backward).
+ *   - Both controllers supported
+ *   - Strongest input wins when both active
+ *   - Dead zone: 0.1 to prevent drift
+ *
+ * Behavior:
+ *   - Forward (positive Y): increases object size, torus moves toward cone base
+ *   - Backward (negative Y): decreases object size, torus moves toward cone tip
+ *   - Input is inverted (deltaScale = -yAxis) to match expected behavior
+ *
+ * Speed: 12.5% per second at full thumbstick deflection (4 seconds for 75% to 125% range).
+ *
+ * Only active when object is selected and in scale mode.
  */
 interface ScaleControllerProps {
   selectedObjectId: string | null
@@ -1018,20 +999,21 @@ function ScaleController({ selectedObjectId, transformMode, onScale }: ScaleCont
   const rightController = useXRInputSourceState('controller', 'right')
 
   useFrame((_state, delta) => {
-    // Only scale when object selected and in scale mode
     if (!selectedObjectId || transformMode !== 'scale') return
 
+    // Get thumbstick Y-axis values from both controllers
     const leftThumbstick = leftController?.gamepad?.['xr-standard-thumbstick']
     const rightThumbstick = rightController?.gamepad?.['xr-standard-thumbstick']
 
     const leftY = leftThumbstick?.yAxis ?? 0
     const rightY = rightThumbstick?.yAxis ?? 0
 
+    // Apply dead zone to filter out drift
     const DEAD_ZONE = 0.1
     const leftActive = Math.abs(leftY) > DEAD_ZONE
     const rightActive = Math.abs(rightY) > DEAD_ZONE
 
-    // Determine scaling input: use strongest thumbstick if both active
+    // Select scaling input: strongest thumbstick wins if both active
     let scaleInput = 0
     if (leftActive && rightActive) {
       scaleInput = Math.abs(leftY) > Math.abs(rightY) ? leftY : rightY
@@ -1041,11 +1023,10 @@ function ScaleController({ selectedObjectId, transformMode, onScale }: ScaleCont
       scaleInput = rightY
     }
 
-    // Apply scaling
+    // Apply scaling with frame-rate independent speed
     if (scaleInput !== 0) {
-      // Speed: 12.5% per second = 0.125 scale units per second
-      const scaleSpeed = 0.125
-      // Invert the sign so forward (positive yAxis) increases size
+      const scaleSpeed = 0.125  // 12.5% per second
+      // Invert input so forward (positive) increases size
       const deltaScale = -scaleInput * scaleSpeed * delta
 
       onScale(deltaScale)
