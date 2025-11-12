@@ -1095,11 +1095,109 @@ innerRadius = distanceFromTip * 0.1  (cone radius / cone height)
 - At 0.5m from tip: 0.5 - 0.5 = 0 (center)
 - At 1m from tip: 0.5 - 1.0 = -0.5 (base)
 
+## Implementation Summary
+
+### What Was Implemented
+
+**State Management** (Lines 236-244, 279-292 in ARHitTestManager.tsx):
+- Added `scale` property to `anchoredObjects` state (0.75 to 1.25, default 1.0)
+- Created `handleScale(deltaScale)` function with clamping
+- Initialized all new objects with `scale: 1.0`
+
+**Scale Application** (Lines 415-479 in ARHitTestManager.tsx):
+- Updated `SelectableObject` to accept scale prop
+- Separated `baseScale` (asset-specific) from user `scale`
+- Applied combined scale: `finalScale = baseScale * scale`
+- Used on model group, not parent group (visuals at anchor)
+- Updated position calculation to use `finalScale` for yOffset
+
+**ScaleSlider Component** (Lines 799-907 in ARHitTestManager.tsx):
+- Cone: 1m tall, 0.1m radius, light green (#90EE90), tip down via `rotation={[Math.PI, 0, 0]}`
+- Torus: Dynamic sizing via `useMemo`, dark green (#006400), 10cm tube
+- Positioned at PlacementHandler level (outside SelectableObject hierarchy)
+- Orientation: Identity quaternion for global Y alignment
+- Position: `anchorPos + (scaledHeight + 0.5m) * planeNormal`
+
+**ScaleController Component** (Lines 946-1002 in ARHitTestManager.tsx):
+- Thumbstick Y-axis input (inverted: forward increases size)
+- Both left and right controllers supported
+- Strongest input wins pattern
+- Speed: 12.5% per second (0.125 units/sec)
+- Dead zone: 0.1
+- Only active in scale mode with selected object
+
+**Torus Animation** (Lines 835-848 in ARHitTestManager.tsx):
+- Distance mapping: `distanceFromTip = (scale - 0.75) / 0.5 * 1.0`
+- Inner radius: `distanceFromTip * 0.2` (cone diameter / height)
+- Position: `torusY = 0.5 - distanceFromTip`
+- Recreated via `useMemo` when scale changes (performance optimized)
+
+### Critical Bug Fix: Parent Transform Inheritance
+
+**Problem Discovered**:
+- ScaleSlider was initially rendered inside `ModificationVisuals` → child of `SelectableObject` group
+- Even when setting world-space positions in `useFrame`, Three.js interpreted them as **local coordinates relative to parent**
+- Result: Slider appeared displaced/rotated because it inherited object's transform
+
+**Root Cause**:
+```typescript
+// WRONG - Slider as child of object group
+<group ref={groupRef} matrixAutoUpdate={false}>  // Has custom matrix (rotation, position)
+  <ModificationVisuals>
+    <ScaleSlider />  // Inherits parent's transform!
+  </ModificationVisuals>
+</group>
+```
+
+**Solution Implemented** (Lines 349-381 in ARHitTestManager.tsx):
+- Moved ScaleSlider rendering to PlacementHandler level
+- Now rendered as **sibling** of SelectableObject, not child
+- Uses React.Fragment to group SelectableObject + ScaleSlider per object
+- ScaleSlider now renders in true world space without inheritance
+
+```typescript
+// CORRECT - Slider as sibling
+<React.Fragment>
+  <SelectableObject />  // Has its own transform
+  <ScaleSlider />       // Independent world-space positioning
+</React.Fragment>
+```
+
+**Key Learning**: For UI elements that need world-space positioning (sliders, indicators, labels), render them **outside** the object hierarchy they're associated with. Use the anchor reference to calculate positions, but don't make them children of transformed groups.
+
+### Current Status
+
+**Working**:
+- ✅ Scaling input direction (forward = increase, backward = decrease)
+- ✅ Slider position (correctly at anchor point)
+- ✅ Slider orientation (identity quaternion for global Y)
+- ✅ Torus animation and sizing
+- ✅ Scale state persistence
+- ✅ Mode toggling with A button
+
+**Known Issues** (to be fixed):
+1. Slider position may need adjustment relative to object height
+2. Slider orientation may need refinement for different plane angles
+3. Cone may not always point straight down in global Y direction
+4. Distance from object may need tweaking
+
+**Debug Visualizations** (currently disabled):
+- Green arrow: Object's anchor position
+- Red arrow: Object's local origin (after yOffset)
+- Magenta arrow: ScaleSlider's anchor position
+- All commented out in lines 432-450, 547-556, 572-577 (SelectableObject) and 821-829, 872-874, 893 (ScaleSlider)
+
+### Files Modified
+
+- `src/components/ARHitTestManager.tsx`: Added scale mode implementation
+- `CLAUDE.md`: Documented scale mode and parent transform inheritance pattern
+- `docs/feature4-2-scale-research.md`: This implementation summary
+
 ## Next Steps
 
-After implementing scale mode:
+After fixing remaining issues:
 1. Test thoroughly on Quest 2 device
-2. Document any issues or refinements needed
-3. Prepare for Feature 4.2.3 (Move Mode) implementation
-4. Consider performance optimizations if needed
-5. Update CLAUDE.md with scale mode patterns and learnings
+2. Refine slider positioning and orientation
+3. Document final implementation patterns
+4. Prepare for Feature 4.2.3 (Move Mode) implementation
+5. Consider performance optimizations if needed

@@ -187,30 +187,47 @@ Located in `public/asset/`:
 
 **Key Pattern:** Auto-exit draw mode after object placement prevents selecting objects from triggering duplicate placement.
 
-### Feature 4.2: Object Rotation (Rotate Mode)
+### Feature 4.2: Object Transformation (Rotate & Scale Modes)
 
 **State (in PlacementHandler):**
 - `transformMode`: 'rotate' | 'scale' | 'move' (default: 'rotate')
 - `rotation`: Number (radians) in anchoredObjects array per object
+- `scale`: Number (0.75 to 1.25) in anchoredObjects array per object
 - `handleRotate(deltaRotation)`: Updates rotation state
+- `handleScale(deltaScale)`: Updates scale state with clamping
 - `handleToggleMode()`: Cycles through modes
 
 **Components (in ARHitTestManager.tsx):**
 - `RotateRing`: Yellow ring at object center [0,0,0], rotation [-π/2,0,0], radius = bbox diagonal/2 + 0.15m, thickness 7.5%
+- `ScaleSlider`: Cone + torus slider, rendered at PlacementHandler level (outside object hierarchy)
 - `RotationController`: Thumbstick X-axis input, 30°/sec, dead zone 0.1, strongest input wins when both active
+- `ScaleController`: Thumbstick Y-axis input, 12.5% per second (inverted: forward increases size)
 - `ModeController`: A button (right) cycles modes with edge detection
-- `ModificationVisuals`: Container that renders ring/placeholders based on mode
+- `ModificationVisuals`: Container that renders rotate/move visuals (scale is rendered separately)
 
 **Rotation Logic (SelectableObject useFrame):**
 - Decompose anchor matrix → extract plane normal from Y-axis
 - Create rotation quat: `setFromAxisAngle(planeNormal, rotation)`
 - Compose: `matrix.compose(anchorPos + offset, rotationQuat * anchorQuat, scale)`
 
+**Scale Logic:**
+- Combined scale: `finalScale = baseScale * userScale`
+- Base scale factors: table=0.9, bed=0.25, sofa/round-table=1.0
+- User scale range: 0.75 to 1.25 (75% to 125%)
+- Applied to model group, not parent group (visuals remain at anchor position)
+
 **Key Patterns:**
-- Child visuals inherit parent transform - no manual matrix updates
+- Child visuals inherit parent transform - no manual matrix updates needed for rotate ring
 - Quaternion rotation around arbitrary axis for any plane orientation
 - No modulo on angle (causes snapping) - soft normalization at ±4π
 - Player locomotion disabled (commented out in App.tsx)
+
+**CRITICAL: Parent Transform Inheritance**
+- Components rendered as **children** of SelectableObject's group inherit its transform
+- Even when setting world-space positions in `useFrame`, Three.js interprets them as local coordinates
+- **Solution**: Render world-space UI elements (like ScaleSlider) at PlacementHandler level as **siblings**, not children
+- **Example**: ScaleSlider was originally inside ModificationVisuals (child of object group) → positions were wrong
+- **Fix**: Moved to PlacementHandler level → now renders in true world space without inheriting object rotation/position
 
 ### Critical WebXR Patterns
 

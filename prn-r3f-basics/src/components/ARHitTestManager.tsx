@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from 'react'
+import React, { useEffect, useRef, useState, useMemo } from 'react'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { useXR, useXRInputSourceState } from '@react-three/xr'
 import { useGLTF } from '@react-three/drei'
@@ -240,6 +240,7 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
     anchor: XRAnchor
     type: 'table' | 'bed' | 'sofa' | 'round-table'
     rotation: number  // Feature 4.2: Rotation angle in radians around plane normal
+    scale: number  // Feature 4.2: Scale multiplier (0.75 to 1.25, default 1.0 = 100%)
   }>>([])
 
   // Feature 4.1: Selection state
@@ -270,6 +271,21 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
                                     newRotation < -Math.PI * 4 ? newRotation + Math.PI * 4 :
                                     newRotation
         return { ...obj, rotation: normalizedRotation }
+      }
+      return obj
+    }))
+  }
+
+  // Feature 4.2: Scale handler - accumulates scale smoothly with clamping
+  const handleScale = (deltaScale: number) => {
+    if (!selectedObjectId) return
+
+    setAnchoredObjects(prev => prev.map(obj => {
+      if (obj.id === selectedObjectId) {
+        const newScale = obj.scale + deltaScale
+        // Clamp to range [0.75, 1.25]
+        const clampedScale = Math.max(0.75, Math.min(1.25, newScale))
+        return { ...obj, scale: clampedScale }
       }
       return obj
     }))
@@ -313,7 +329,8 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
             id: Math.random().toString(),
             anchor: anchor,
             type: selectedObjectType,
-            rotation: 0  // Feature 4.2: Initialize rotation to 0
+            rotation: 0,  // Feature 4.2: Initialize rotation to 0
+            scale: 1.0  // Feature 4.2: Initialize scale to 1.0 (100%)
           }])
 
           // Exit draw mode after placing one object to prevent accidental placement when selecting
@@ -331,23 +348,37 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
 
   return (
     <>
-      {anchoredObjects.map(({ id, anchor, type, rotation }) => (
-        <SelectableObject
-          key={id}
-          id={id}
-          anchor={anchor}
-          xrRefSpace={xrRefSpace}
-          type={type}
-          rotation={rotation}
-          isSelected={selectedObjectId === id}
-          transformMode={transformMode}
-          onSelect={(id) => {
-            objectClickedRef.current = true
-            setSelectedObjectId(id)
-            console.log(`Object selected: ${id}`)
-          }}
-        />
-      ))}
+      {anchoredObjects.map(({ id, anchor, type, rotation, scale }) => {
+        const isSelected = selectedObjectId === id
+        return (
+          <React.Fragment key={id}>
+            <SelectableObject
+              id={id}
+              anchor={anchor}
+              xrRefSpace={xrRefSpace}
+              type={type}
+              rotation={rotation}
+              scale={scale}
+              isSelected={isSelected}
+              transformMode={transformMode}
+              onSelect={(id) => {
+                objectClickedRef.current = true
+                setSelectedObjectId(id)
+                console.log(`Object selected: ${id}`)
+              }}
+            />
+            {/* Render ScaleSlider outside object hierarchy for correct world-space positioning */}
+            {isSelected && transformMode === 'scale' && (
+              <ScaleSlider
+                anchor={anchor}
+                xrRefSpace={xrRefSpace}
+                scale={scale}
+                baseScale={type === 'table' ? 0.9 : type === 'bed' ? 0.25 : 1.0}
+              />
+            )}
+          </React.Fragment>
+        )
+      })}
 
       {/* Feature 4.1: B button controller for deletion */}
       <SelectionController
@@ -355,11 +386,16 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
         onDeleteSelected={handleDeleteSelected}
       />
 
-      {/* Feature 4.2: Rotation and mode controllers */}
+      {/* Feature 4.2: Rotation, scale, and mode controllers */}
       <RotationController
         selectedObjectId={selectedObjectId}
         transformMode={transformMode}
         onRotate={handleRotate}
+      />
+      <ScaleController
+        selectedObjectId={selectedObjectId}
+        transformMode={transformMode}
+        onScale={handleScale}
       />
       <ModeController
         selectedObjectId={selectedObjectId}
@@ -375,7 +411,7 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
  * Updates object position from anchor pose each frame
  * Feature 3: Supports table, bed, and sofa object types loaded from GLB files
  * Feature 4.1: Supports selection via onClick and visual feedback
- * Feature 4.2: Supports rotation around plane normal
+ * Feature 4.2: Supports rotation around plane normal and scaling
  */
 interface SelectableObjectProps {
   id: string
@@ -383,14 +419,35 @@ interface SelectableObjectProps {
   xrRefSpace: XRReferenceSpace | null
   type: 'table' | 'bed' | 'sofa' | 'round-table'
   rotation: number  // Feature 4.2: Rotation angle in radians
+  scale: number  // Feature 4.2: Scale multiplier (0.75 to 1.25)
   isSelected: boolean
   transformMode: TransformMode  // Feature 4.2: Current transform mode
   onSelect: (id: string) => void
 }
 
-function SelectableObject({ id, anchor, xrRefSpace, type, rotation, isSelected, transformMode, onSelect }: SelectableObjectProps) {
+function SelectableObject({ id, anchor, xrRefSpace, type, rotation, scale, isSelected, transformMode, onSelect }: SelectableObjectProps) {
   const groupRef = useRef<THREE.Group>(null)
   const { session } = useXR()
+
+  // Debug: Arrow to visualize object's anchor position (DISABLED)
+  // const objectAnchorArrow = useMemo(() => new THREE.ArrowHelper(
+  //   new THREE.Vector3(0, 1, 0),
+  //   new THREE.Vector3(0, 0, 0),
+  //   1.0,  // 1m long
+  //   0x00ff00,  // Green color
+  //   0.15,
+  //   0.08
+  // ), [])
+
+  // Debug: Arrow to visualize object's local origin (DISABLED)
+  // const objectOriginArrow = useMemo(() => new THREE.ArrowHelper(
+  //   new THREE.Vector3(0, 1, 0),
+  //   new THREE.Vector3(0, 0, 0),
+  //   0.8,  // 0.8m long
+  //   0xff0000,  // Red color
+  //   0.12,
+  //   0.06
+  // ), [])
 
   // Feature 4.1: Handle click for selection
   const handleClick = (event: ThreeEvent<MouseEvent>) => {
@@ -405,15 +462,15 @@ function SelectableObject({ id, anchor, xrRefSpace, type, rotation, isSelected, 
   // Clone the scene to avoid sharing geometry between instances
   const clonedScene = useMemo(() => {
     const cloned = scene.clone()
-    
+
     // Traverse and fix materials to ensure textures and colors are visible
     cloned.traverse((child) => {
       if (child instanceof THREE.Mesh && child.material) {
         // Handle both single materials and arrays
         const materials = Array.isArray(child.material) ? child.material : [child.material]
-        
+
         materials.forEach((material) => {
-          if (material instanceof THREE.MeshStandardMaterial || 
+          if (material instanceof THREE.MeshStandardMaterial ||
               material instanceof THREE.MeshPhysicalMaterial) {
             // Material is already a lit material, just ensure it's properly configured
             material.needsUpdate = true
@@ -440,16 +497,19 @@ function SelectableObject({ id, anchor, xrRefSpace, type, rotation, isSelected, 
         })
       }
     })
-    
+
     return cloned
   }, [scene])
 
-  // Scale factors: table 90% (10% reduction), bed 20% (80% reduction), sofa 100%, round-table 100%
-  const scale = useMemo(() => {
+  // Base scale factors: table 90% (10% reduction), bed 20% (80% reduction), sofa 100%, round-table 100%
+  const baseScale = useMemo(() => {
     if (type === 'table') return 0.9
     if (type === 'bed') return 0.25
     return 1.0
   }, [type])
+
+  // Combined scale = base scale * user scale (0.75 to 1.25)
+  const finalScale = baseScale * scale
 
   // Calculate Y offset once when model is loaded (unscaled, we'll scale it in the offset)
   const yOffset = useMemo(() => {
@@ -484,8 +544,16 @@ function SelectableObject({ id, anchor, xrRefSpace, type, rotation, isSelected, 
     // Extract plane normal from anchor orientation (Y-axis)
     const planeNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(anchorQuat)
 
+    // Debug: Update object's anchor position arrow (green) - DISABLED
+    // objectAnchorArrow.position.copy(anchorPos)
+    // objectAnchorArrow.setDirection(planeNormal.normalize())
+
     // Position object at anchor point + offset along plane normal
-    const finalPos = anchorPos.clone().add(planeNormal.clone().multiplyScalar(yOffset * scale))
+    const finalPos = anchorPos.clone().add(planeNormal.clone().multiplyScalar(yOffset * finalScale))
+
+    // Debug: Update object's local origin arrow (red) - DISABLED
+    // objectOriginArrow.position.copy(finalPos)
+    // objectOriginArrow.setDirection(planeNormal.normalize())
 
     // Apply user rotation around plane normal
     let finalQuat = anchorQuat.clone()
@@ -499,21 +567,31 @@ function SelectableObject({ id, anchor, xrRefSpace, type, rotation, isSelected, 
   })
 
   return (
-    <group ref={groupRef} matrixAutoUpdate={false} onClick={handleClick}>
-      <group scale={scale}>
-        <primitive object={clonedScene} />
-      </group>
+    <>
+      {/* Debug: Green arrow at anchor position, Red arrow at object origin - DISABLED */}
+      {/* {isSelected && (
+        <>
+          <primitive object={objectAnchorArrow} />
+          <primitive object={objectOriginArrow} />
+        </>
+      )} */}
 
-      {/* Feature 4.2: Mode-specific visual feedback */}
-      {isSelected && (
-        <ModificationVisuals
-          mode={transformMode}
-          objectRef={groupRef}
-          anchor={anchor}
-          xrRefSpace={xrRefSpace}
-        />
-      )}
-    </group>
+      <group ref={groupRef} matrixAutoUpdate={false} onClick={handleClick}>
+        <group scale={finalScale}>
+          <primitive object={clonedScene} />
+        </group>
+
+        {/* Feature 4.2: Mode-specific visual feedback (rotate/move only, scale is rendered outside) */}
+        {isSelected && (
+          <ModificationVisuals
+            mode={transformMode}
+            objectRef={groupRef}
+            anchor={anchor}
+            xrRefSpace={xrRefSpace}
+          />
+        )}
+      </group>
+    </>
   )
 }
 
@@ -522,7 +600,7 @@ function SelectableObject({ id, anchor, xrRefSpace, type, rotation, isSelected, 
  *
  * Feature 4.2: Shows different visuals based on active transform mode
  * - Rotate mode: Yellow ring around object
- * - Scale mode: Placeholder (cone + torus slider - to be implemented)
+ * - Scale mode: Slider rendered at PlacementHandler level (outside this hierarchy)
  * - Move mode: Placeholder (red axes - to be implemented)
  */
 interface ModificationVisualsProps {
@@ -537,13 +615,6 @@ function ModificationVisuals({ mode, objectRef, anchor, xrRefSpace }: Modificati
     <>
       {mode === 'rotate' && (
         <RotateRing objectRef={objectRef} anchor={anchor} xrRefSpace={xrRefSpace} />
-      )}
-      {mode === 'scale' && (
-        // Placeholder for Feature 4.2.2
-        <mesh position={[0, 1, 0]}>
-          <boxGeometry args={[0.1, 0.1, 0.1]} />
-          <meshBasicMaterial color="green" />
-        </mesh>
       )}
       {mode === 'move' && (
         // Placeholder for Feature 4.2.3
@@ -726,6 +797,119 @@ function RotateDebugVectors({ objectRef, anchor, xrRefSpace }: RotateDebugVector
 }
 
 /**
+ * ScaleSlider - Visual slider for scale mode
+ *
+ * Feature 4.2: Shows a cone + torus slider above the selected object
+ * - Cone: 1m tall, 0.1m radius (20cm diameter), light green, tip pointing down
+ * - Torus: Dynamic sizing based on scale, dark green, moves along cone
+ * - Positioned perpendicular to placement plane with fixed 50cm clearance
+ * - Oriented parallel to global Y-axis (always vertical)
+ * - Torus starts at middle of cone (represents 100% scale)
+ * - Rendered outside object hierarchy to avoid transform inheritance
+ */
+interface ScaleSliderProps {
+  anchor: XRAnchor
+  xrRefSpace: XRReferenceSpace | null
+  scale: number  // User scale multiplier (0.75 to 1.25)
+  baseScale: number  // Asset-specific base scale
+}
+
+function ScaleSlider({ anchor, xrRefSpace, scale, baseScale }: ScaleSliderProps) {
+  const sliderGroupRef = useRef<THREE.Group>(null)
+  const { session } = useXR()
+
+  // Debug: Arrow to visualize anchor normal - DISABLED
+  // const anchorNormalArrow = useMemo(() => new THREE.ArrowHelper(
+  //   new THREE.Vector3(0, 1, 0),
+  //   new THREE.Vector3(0, 0, 0),
+  //   1.5,  // 1.5m long for visibility
+  //   0xff00ff,  // Magenta color
+  //   0.2,
+  //   0.1
+  // ), [])
+
+  // Approximate object heights (unscaled) based on asset type
+  // These are rough estimates - ideally would be calculated from actual models
+  const unscaledHeight = 0.5  // Default estimate for positioning
+
+  // Calculate torus parameters from scale
+  const { torusRadius, torusYPosition } = useMemo(() => {
+    // Map scale (0.75 to 1.25) to distance from tip (0 to 1m)
+    const distanceFromTip = (scale - 0.75) / 0.5 * 1.0
+
+    // Inner diameter formula: distanceFromTip * (cone_diameter / cone_height)
+    // cone_diameter = 0.2m (20cm), cone_height = 1.0m
+    const innerDiameter = distanceFromTip * (0.2 / 1.0)
+    const innerRadius = innerDiameter / 2
+
+    // Minimum radius to avoid degenerate geometry
+    const radius = Math.max(0.01, innerRadius)
+
+    // Position on cone (tip at +0.5m, base at -0.5m due to geometric center)
+    const yPos = 0.5 - distanceFromTip
+
+    return { torusRadius: radius, torusYPosition: yPos }
+  }, [scale])
+
+  // Update slider position each frame
+  useFrame((state) => {
+    if (!session || !xrRefSpace || !sliderGroupRef.current) return
+
+    const frame = state.gl.xr.getFrame()
+    if (!frame?.trackedAnchors?.has(anchor)) return
+
+    const anchorPose = frame.getPose(anchor.anchorSpace, xrRefSpace)
+    if (!anchorPose) return
+
+    // Extract anchor position and plane normal
+    const anchorMatrix = new THREE.Matrix4().fromArray(anchorPose.transform.matrix)
+    const anchorPos = new THREE.Vector3()
+    const anchorQuat = new THREE.Quaternion()
+    anchorMatrix.decompose(anchorPos, anchorQuat, new THREE.Vector3())
+
+    const planeNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(anchorQuat)
+
+    // Debug: Update anchor normal arrow - DISABLED
+    // anchorNormalArrow.position.copy(anchorPos)
+    // anchorNormalArrow.setDirection(planeNormal.normalize())
+
+    // Calculate scaled height (unscaled height * base scale * user scale)
+    const scaledHeight = unscaledHeight * baseScale * scale
+
+    // Position slider: anchor + (scaledHeight + clearance) * normal
+    const clearance = 0.5  // 50cm above object
+    const sliderPos = anchorPos.clone()
+      .add(planeNormal.clone().multiplyScalar(scaledHeight + clearance))
+
+    sliderGroupRef.current.position.copy(sliderPos)
+
+    // Set orientation to global Y (identity quaternion = global axes)
+    sliderGroupRef.current.quaternion.set(0, 0, 0, 1)
+  })
+
+  return (
+    <>
+      {/* Debug: Magenta arrow showing anchor position and plane normal - DISABLED */}
+      {/* <primitive object={anchorNormalArrow} /> */}
+
+      <group ref={sliderGroupRef}>
+        {/* Cone: 1m tall, 0.1m radius, tip pointing down */}
+        <mesh rotation={[Math.PI, 0, 0]}>
+          <coneGeometry args={[0.1, 1.0, 16]} />
+          <meshBasicMaterial color="#90EE90" side={THREE.DoubleSide} />
+        </mesh>
+
+        {/* Torus: dynamic size and position */}
+        <mesh position={[0, torusYPosition, 0]}>
+          <torusGeometry args={[torusRadius, 0.1, 16, 32]} />
+          <meshBasicMaterial color="#006400" />
+        </mesh>
+      </group>
+    </>
+  )
+}
+
+/**
  * SelectionController - Handles B button input for deletion
  *
  * Feature 4.1: Monitors right controller B button and triggers deletion
@@ -806,6 +990,65 @@ function RotationController({ selectedObjectId, transformMode, onRotate }: Rotat
       const rotationSpeed = Math.PI / 6  // 30 degrees/sec in radians
       const deltaRotation = rotationInput * rotationSpeed * delta
       onRotate(deltaRotation)
+    }
+  })
+
+  return null
+}
+
+/**
+ * ScaleController - Handles thumbstick input for object scaling
+ *
+ * Feature 4.2: Smooth scaling control using controller thumbsticks
+ * - Only active when object is selected and in scale mode
+ * - Either left or right thumbstick Y-axis controls scaling
+ * - If both thumbsticks active, uses the one with larger magnitude
+ * - Forward (positive Y) increases size, backward (negative Y) decreases size
+ * - Scaling speed: 12.5% per second (4 seconds for full range 75% to 125%)
+ * - Dead zone: 0.1 to prevent drift
+ */
+interface ScaleControllerProps {
+  selectedObjectId: string | null
+  transformMode: TransformMode
+  onScale: (deltaScale: number) => void
+}
+
+function ScaleController({ selectedObjectId, transformMode, onScale }: ScaleControllerProps) {
+  const leftController = useXRInputSourceState('controller', 'left')
+  const rightController = useXRInputSourceState('controller', 'right')
+
+  useFrame((_state, delta) => {
+    // Only scale when object selected and in scale mode
+    if (!selectedObjectId || transformMode !== 'scale') return
+
+    const leftThumbstick = leftController?.gamepad?.['xr-standard-thumbstick']
+    const rightThumbstick = rightController?.gamepad?.['xr-standard-thumbstick']
+
+    const leftY = leftThumbstick?.yAxis ?? 0
+    const rightY = rightThumbstick?.yAxis ?? 0
+
+    const DEAD_ZONE = 0.1
+    const leftActive = Math.abs(leftY) > DEAD_ZONE
+    const rightActive = Math.abs(rightY) > DEAD_ZONE
+
+    // Determine scaling input: use strongest thumbstick if both active
+    let scaleInput = 0
+    if (leftActive && rightActive) {
+      scaleInput = Math.abs(leftY) > Math.abs(rightY) ? leftY : rightY
+    } else if (leftActive) {
+      scaleInput = leftY
+    } else if (rightActive) {
+      scaleInput = rightY
+    }
+
+    // Apply scaling
+    if (scaleInput !== 0) {
+      // Speed: 12.5% per second = 0.125 scale units per second
+      const scaleSpeed = 0.125
+      // Invert the sign so forward (positive yAxis) increases size
+      const deltaScale = -scaleInput * scaleSpeed * delta
+
+      onScale(deltaScale)
     }
   })
 
