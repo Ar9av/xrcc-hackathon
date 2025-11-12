@@ -176,15 +176,13 @@ function PalettePanel({ visible, onSelectTable, onSelectBed, onSelectSofa, onSel
     }
   })
 
-  if (!visible) return null
-
   return (
     <>
       {/* Debug visualization group - shows rays from origin */}
       {/* <group ref={debugGroupRef} /> */}
 
-      {/* Palette UI */}
-      <group ref={groupRef}>
+      {/* Palette UI - hide with visible prop instead of returning null to ensure cleanup */}
+      <group ref={groupRef} visible={visible}>
         {/* Panel background - using BasicMaterial so it's visible without lighting */}
         <mesh position={[0, 0, 0]}>
           <planeGeometry args={[2.0, 0.6]} />

@@ -490,17 +490,37 @@ position.setFromMatrixPosition(camera.matrixWorld)
 WRONG: Using camera.position returns [0,0,0] in WebXR.
 CORRECT: Extract from matrixWorld which contains actual tracked pose.
 
-Get forward direction by applying camera.quaternion to default forward vector:
-```tsx
-const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion)
-```
+### CRITICAL: Getting Camera Forward Direction in WebXR
 
-Alternative using getWorldDirection:
+**BUG**: `camera.getWorldDirection()` is **broken in WebXR mode** (GitHub issues #19891, #16382, #19084).
+
+Problem: In XR, only `camera.matrixWorld` is updated from XRViewerPose. The `position` and `quaternion` properties remain stale. `getWorldDirection()` internally calls `updateMatrixWorld()` which recalculates the matrix from these stale properties, giving incorrect results.
+
+**Symptom**: Forward vector points opposite to where user is actually looking, or behaves erratically.
+
+**WRONG:**
 ```tsx
 const forward = camera.getWorldDirection(new THREE.Vector3())
+// Returns incorrect direction based on stale quaternion
 ```
 
-Both methods should give same result. If they differ, matrixWorld may not be synchronized with quaternion.
+**CORRECT:**
+```tsx
+// Extract direction directly from matrixWorld column 2 (Z-axis)
+const forward = new THREE.Vector3()
+forward.setFromMatrixColumn(camera.matrixWorld, 2).negate()
+// Negate because Three.js cameras look down -Z
+```
+
+**When This Matters:**
+- Positioning UI elements in front of user (AR menus, palettes)
+- Raycasting from camera direction
+- Any calculation requiring "where the user is looking"
+- AR applications where precise positioning is critical
+
+**When This Doesn't Matter:**
+- Using camera for rendering (handled automatically by WebXR)
+- Extracting camera position (use `setFromMatrixPosition()`, which works correctly)
 
 ### Horizontal Plane Projection
 
@@ -595,9 +615,13 @@ const handleTogglePalette = () => {
 
 This prevents trigger press that opens palette from also triggering placement action, which is cleaner than adding time-based delays.
 
-### Known Issues
+### Known Issues - RESOLVED
 
-Positioning may be inconsistent across different headsets or orientations. camera.getWorldDirection sometimes returns unexpected values (e.g., pointing down when user is looking forward). Quaternion-based forward calculation may differ from getWorldDirection. Requires further investigation with debug visualizations showing default forward, quaternion-applied forward, and projected horizontal forward.
+**Issue**: Positioning was inconsistent, forward vector pointed opposite to expected direction.
+
+**Cause**: Using `camera.getWorldDirection()` which is buggy in WebXR mode (see "Getting Camera Forward Direction" section above).
+
+**Solution**: Extract direction from `camera.matrixWorld` directly using `setFromMatrixColumn()`. This fixed all positioning issues with the AR object palette.
 
 ## AR Object Transformation
 
