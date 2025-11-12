@@ -129,10 +129,10 @@ export default function LandingPage({ onEnterAR, onEnterDefaultView }: LandingPa
             speed={0.5}
             scrambleChars=".:"
           >
-            Real estate agents waste thousands on furniture rental for every listing. 
-            <strong> DecoratAR eliminates these costs</strong> by letting you stage homes with 
-            <strong> virtual furniture in AR</strong>. Use your Quest 2/Quest 3 to scan empty spaces and 
-            place photorealistic furniture instantly. <strong>Save money, stage faster, close more deals.</strong>
+            Real estate agents waste thousands on furniture rental for every listing.{' '}
+            <strong>DecoratAR eliminates these costs</strong> by letting you stage homes with{' '}
+            <strong>virtual furniture in AR</strong>. Use your Quest 2/Quest 3 to scan empty spaces and place photorealistic furniture instantly.{' '}
+            <strong>Save money, stage faster, close more deals.</strong>
           </ScrambledText>
 
           <motion.div
@@ -159,7 +159,7 @@ export default function LandingPage({ onEnterAR, onEnterDefaultView }: LandingPa
           >
             <div className="trust-badges">
               <span>No Credit Card Required</span>
-              <span>Setup in 5 Minutes</span>
+              <span>Setup in 3 Minutes</span>
               <span>Made for XRCC Hackathon</span>
             </div>
           </motion.div>
