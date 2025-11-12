@@ -196,11 +196,11 @@ function App() {
   }, [])
 
   const handleEnterAR = () => {
+    // Call store.enterAR() synchronously to preserve user gesture requirement
+    // WebXR requires requestSession to be called within a user activation event
+    store.enterAR()
+    // Hide landing page after AR session starts
     setShowLandingPage(false)
-    // Small delay to ensure landing page is hidden before entering AR
-    setTimeout(() => {
-      store.enterAR()
-    }, 100)
   }
 
   const handleEnterDefaultView = () => {
@@ -208,78 +208,40 @@ function App() {
     // Just show the default view without entering AR
   }
 
-  // Show landing page
-  if (showLandingPage) {
-    return <LandingPage onEnterAR={handleEnterAR} onEnterDefaultView={handleEnterDefaultView} />
-  }
-
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
-      {/* Back to landing page button */}
-      <button
-        onClick={() => setShowLandingPage(true)}
-        style={{
-          position: 'absolute',
-          top: '20px',
-          left: '20px',
-          zIndex: 1000,
-          padding: '10px 20px',
-          fontSize: '16px',
-          cursor: 'pointer',
-          background: 'rgba(10, 10, 10, 0.8)',
-          color: 'white',
-          border: '1px solid rgba(255, 255, 255, 0.2)',
-          borderRadius: '8px',
-          backdropFilter: 'blur(10px)'
-        }}
-      >
-        ← Back to Home
-      </button>
+      {/* Landing page overlay - shown on top when active */}
+      {showLandingPage && (
+        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 100 }}>
+          <LandingPage onEnterAR={handleEnterAR} onEnterDefaultView={handleEnterDefaultView} />
+        </div>
+      )}
 
-      <button
-        onClick={() => store.enterAR()}
-        style={{
-          position: 'absolute',
-          top: '20px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 1000,
-          padding: '10px 20px',
-          fontSize: '16px',
-          cursor: 'pointer',
-          background: 'rgba(10, 10, 10, 0.8)',
-          color: 'white',
-          border: '1px solid rgba(255, 255, 255, 0.2)',
-          borderRadius: '8px',
-          backdropFilter: 'blur(10px)'
-        }}
-      >
-        Enter AR
-      </button>
+      {/* Back to landing page button - only show when not on landing page */}
+      {!showLandingPage && (
+        <button
+          onClick={() => setShowLandingPage(true)}
+          style={{
+            position: 'absolute',
+            top: '20px',
+            left: '20px',
+            zIndex: 1000,
+            padding: '10px 20px',
+            fontSize: '16px',
+            cursor: 'pointer',
+            background: 'rgba(10, 10, 10, 0.8)',
+            color: 'white',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            borderRadius: '8px',
+            backdropFilter: 'blur(10px)'
+          }}
+        >
+          ← Back to Home
+        </button>
+      )}
 
-      <button
-        onClick={() => store.enterVR()}
-        style={{
-          position: 'absolute',
-          top: '60px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 1000,
-          padding: '10px 20px',
-          fontSize: '16px',
-          cursor: 'pointer',
-          background: 'rgba(10, 10, 10, 0.8)',
-          color: 'white',
-          border: '1px solid rgba(255, 255, 255, 0.2)',
-          borderRadius: '8px',
-          backdropFilter: 'blur(10px)'
-        }}
-      >
-        Enter VR
-      </button>
-
-      {/* Desktop furniture menu - only show when not in AR mode */}
-      {!isARMode && (
+      {/* Desktop furniture menu - only show when not in AR mode and not on landing page */}
+      {!isARMode && !showLandingPage && (
         <DesktopFurnitureMenu
           onSelectTable={handleSelectTable}
           onSelectBed={handleSelectBed}
