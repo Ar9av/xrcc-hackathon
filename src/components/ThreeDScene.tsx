@@ -78,7 +78,7 @@ export function AnimatedGrid() {
 
   return (
     <mesh ref={gridRef} position={[0, -2, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-      <planeGeometry args={[10, 10, 20, 20]} />
+      <planeGeometry args={[200, 200, 40, 40]} />
       <meshBasicMaterial
         color="#6366f1"
         wireframe
