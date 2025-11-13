@@ -20,7 +20,7 @@ export function FloatingFurniture() {
         <boxGeometry args={[1.5, 0.5, 0.8]} />
         <meshStandardMaterial color="#8b5cf6" emissive="#8b5cf6" emissiveIntensity={0.3} />
       </mesh>
-      {/* Table */}
+      {/* TV */}
       <mesh position={[1, 0, 0]}>
         <cylinderGeometry args={[0.3, 0.3, 0.05, 32]} />
         <meshStandardMaterial color="#6366f1" emissive="#6366f1" emissiveIntensity={0.3} />

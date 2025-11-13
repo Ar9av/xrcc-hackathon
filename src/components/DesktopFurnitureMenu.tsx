@@ -1,16 +1,16 @@
 import './DesktopFurnitureMenu.css'
 
 interface DesktopFurnitureMenuProps {
-  onSelectTable: () => void
+  onSelectTv: () => void
   onSelectBed: () => void
   onSelectSofa: () => void
   onSelectRoundTable: () => void
   onCancelSelection: () => void
-  selectedObjectType: 'table' | 'bed' | 'sofa' | 'round-table' | null
+  selectedObjectType: 'tv' | 'bed' | 'sofa' | 'round-table' | null
 }
 
 export function DesktopFurnitureMenu({
-  onSelectTable,
+  onSelectTv,
   onSelectBed,
   onSelectSofa,
   onSelectRoundTable,
@@ -24,14 +24,14 @@ export function DesktopFurnitureMenu({
       </div>
       <div className="menu-items">
         <button
-          className={`menu-item ${selectedObjectType === 'table' ? 'selected' : ''}`}
-          onClick={selectedObjectType === 'table' ? onCancelSelection : onSelectTable}
-          title={selectedObjectType === 'table' ? 'Cancel Selection' : 'Place Table'}
+          className={`menu-item ${selectedObjectType === 'tv' ? 'selected' : ''}`}
+          onClick={selectedObjectType === 'tv' ? onCancelSelection : onSelectTv}
+          title={selectedObjectType === 'tv' ? 'Cancel Selection' : 'Place TV'}
         >
           <div className="icon-container">
-            <img src="/asset/images/table.png" alt="Table" className="furniture-icon" />
+            <img src="/asset/images/tv.png" alt="TV" className="furniture-icon" />
           </div>
-          <span className="item-label">Table</span>
+          <span className="item-label">TV</span>
         </button>
         
         <button

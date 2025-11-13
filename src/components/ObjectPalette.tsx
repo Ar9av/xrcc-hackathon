@@ -21,7 +21,7 @@ const lookMatrix = new THREE.Matrix4()
 interface ObjectPaletteProps {
   isVisible: boolean
   onTogglePalette: () => void
-  onSelectTable: () => void
+  onSelectTv: () => void
   onSelectBed: () => void
   onSelectSofa: () => void
   onSelectRoundTable: () => void
@@ -32,7 +32,7 @@ interface ObjectPaletteProps {
 export function ObjectPalette({
   isVisible,
   onTogglePalette,
-  onSelectTable,
+  onSelectTv,
   onSelectBed,
   onSelectSofa,
   onSelectRoundTable,
@@ -41,10 +41,10 @@ export function ObjectPalette({
 }: ObjectPaletteProps) {
   return (
     <>
-      {/* Palette UI - 3D panel with table, bed, sofa, and round-table buttons */}
+      {/* Palette UI - 3D panel with tv, bed, sofa, and round-table buttons */}
       <PalettePanel
         visible={isVisible}
-        onSelectTable={onSelectTable}
+        onSelectTv={onSelectTv}
         onSelectBed={onSelectBed}
         onSelectSofa={onSelectSofa}
         onSelectRoundTable={onSelectRoundTable}
@@ -66,23 +66,23 @@ export function ObjectPalette({
  */
 interface PalettePanelProps {
   visible: boolean
-  onSelectTable: () => void
+  onSelectTv: () => void
   onSelectBed: () => void
   onSelectSofa: () => void
   onSelectRoundTable: () => void
 }
 
-function PalettePanel({ visible, onSelectTable, onSelectBed, onSelectSofa, onSelectRoundTable }: PalettePanelProps) {
+function PalettePanel({ visible, onSelectTv, onSelectBed, onSelectSofa, onSelectRoundTable }: PalettePanelProps) {
   const groupRef = useRef<THREE.Group>(null)
   const positioned = useRef(false)
-  const [tableHovered, setTableHovered] = useState(false)
+  const [tvHovered, setTvHovered] = useState(false)
   const [bedHovered, setBedHovered] = useState(false)
   const [sofaHovered, setSofaHovered] = useState(false)
   const [roundTableHovered, setRoundTableHovered] = useState(false)
 
   // Load images with error handling and proper texture configuration
-  const tableTexture = useLoader(TextureLoader, '/asset/images/table.png', undefined, (error) => {
-    console.error('Failed to load table texture:', error)
+  const tvTexture = useLoader(TextureLoader, '/asset/images/tv.png', undefined, (error) => {
+    console.error('Failed to load tv texture:', error)
   })
   const bedTexture = useLoader(TextureLoader, '/asset/images/bed.png', undefined, (error) => {
     console.error('Failed to load bed texture:', error)
@@ -96,13 +96,13 @@ function PalettePanel({ visible, onSelectTable, onSelectBed, onSelectSofa, onSel
 
   // Configure textures for proper display
   useEffect(() => {
-    [tableTexture, bedTexture, sofaTexture, roundTableTexture].forEach(texture => {
+    [tvTexture, bedTexture, sofaTexture, roundTableTexture].forEach(texture => {
       if (texture) {
         texture.flipY = true
         texture.needsUpdate = true
       }
     })
-  }, [tableTexture, bedTexture, sofaTexture, roundTableTexture])
+  }, [tvTexture, bedTexture, sofaTexture, roundTableTexture])
 
   // Debug visualization refs
   // const debugGroupRef = useRef<THREE.Group>(null)
@@ -270,21 +270,21 @@ function PalettePanel({ visible, onSelectTable, onSelectBed, onSelectSofa, onSel
           </Text>
         </group>
 
-        {/* Bottom-left: Table */}
+        {/* Bottom-left: TV */}
         <group position={[-0.175, -0.2, 0.01]}>
           <mesh
             onClick={() => {
-              // console.log('Table selected!')
-              onSelectTable()
+              // console.log('TV selected!')
+              onSelectTv()
             }}
-            onPointerOver={() => setTableHovered(true)}
-            onPointerOut={() => setTableHovered(false)}
+            onPointerOver={() => setTvHovered(true)}
+            onPointerOut={() => setTvHovered(false)}
           >
             <planeGeometry args={[0.3, 0.3]} />
             <meshBasicMaterial 
-              map={tableTexture} 
+              map={tvTexture} 
               transparent 
-              opacity={tableHovered ? 1.0 : 0.9}
+              opacity={tvHovered ? 1.0 : 0.9}
             />
           </mesh>
           <Text
@@ -296,7 +296,7 @@ function PalettePanel({ visible, onSelectTable, onSelectBed, onSelectSofa, onSel
             outlineWidth={0.002}
             outlineColor="black"
           >
-            table
+            tv
           </Text>
         </group>
 

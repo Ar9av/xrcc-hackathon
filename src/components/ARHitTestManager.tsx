@@ -22,12 +22,12 @@ const ENABLE_PLANE_VISUALIZATION = false
  *
  * Feature 3 additions:
  * - Only shows cursor when in draw mode
- * - Supports placing different object types (table, bed, or sofa)
+ * - Supports placing different object types (tv, bed, or sofa)
  */
 
 interface ARHitTestManagerProps {
   isDrawMode: boolean
-  selectedObjectType: 'table' | 'bed' | 'sofa' | 'round-table' | null
+  selectedObjectType: 'tv' | 'bed' | 'sofa' | 'round-table' | null
   onExitDrawMode: () => void
   isPaletteVisible: boolean
 }
@@ -232,7 +232,7 @@ interface PlacementHandlerProps {
   hitResult: XRHitTestResult | null
   xrRefSpace: XRReferenceSpace | null
   isDrawMode: boolean
-  selectedObjectType: 'table' | 'bed' | 'sofa' | 'round-table' | null
+  selectedObjectType: 'tv' | 'bed' | 'sofa' | 'round-table' | null
   onExitDrawMode: () => void
   isPaletteVisible: boolean
 }
@@ -245,7 +245,7 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
   const [anchoredObjects, setAnchoredObjects] = useState<Array<{
     id: string
     anchor: XRAnchor
-    type: 'table' | 'bed' | 'sofa' | 'round-table'
+    type: 'tv' | 'bed' | 'sofa' | 'round-table'
     rotation: number  // Feature 4.2: Rotation angle in radians around plane normal
     scale: number  // Feature 4.2: Scale multiplier (0.75 to 1.25, default 1.0 = 100%)
   }>>([])
@@ -381,7 +381,7 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
                 xrRefSpace={xrRefSpace}
                 type={type}
                 scale={scale}
-                baseScale={type === 'table' ? 0.9 : type === 'bed' ? 0.25 : 1.0}
+                baseScale={type === 'tv' ? 0.9 : type === 'bed' ? 0.25 : 1.0}
               />
             )}
           </React.Fragment>
@@ -422,10 +422,10 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
 }
 
 /**
- * SelectableObject - Renders GLB model (table, bed, or sofa) that tracks anchor position
+ * SelectableObject - Renders GLB model (tv, bed, or sofa) that tracks anchor position
  *
  * Updates object position from anchor pose each frame
- * Feature 3: Supports table, bed, and sofa object types loaded from GLB files
+ * Feature 3: Supports tv, bed, and sofa object types loaded from GLB files
  * Feature 4.1: Supports selection via onClick and visual feedback
  * Feature 4.2: Supports rotation around plane normal and scaling
  */
@@ -433,7 +433,7 @@ interface SelectableObjectProps {
   id: string
   anchor: XRAnchor
   xrRefSpace: XRReferenceSpace | null
-  type: 'table' | 'bed' | 'sofa' | 'round-table'
+  type: 'tv' | 'bed' | 'sofa' | 'round-table'
   rotation: number  // Feature 4.2: Rotation angle in radians
   scale: number  // Feature 4.2: Scale multiplier (0.75 to 1.25)
   isSelected: boolean
@@ -497,10 +497,10 @@ function SelectableObject({ id, anchor, xrRefSpace, type, rotation, scale, isSel
     return cloned
   }, [scene])
 
-  // Base scale factors: table 90% (10% reduction), bed 25% (75% reduction), sofa 100%, round-table 100%
+  // Base scale factors: tv 90% (10% reduction), bed 50% (50% reduction), sofa 100%, round-table 100%
   const baseScale = useMemo(() => {
-    if (type === 'table') return 0.9
-    if (type === 'bed') return 0.25
+    if (type === 'tv') return 0.02
+    if (type === 'bed') return 1.1
     return 1.0
   }, [type])
 
@@ -801,7 +801,7 @@ function RotateDebugVectors({ objectRef, anchor, xrRefSpace }: RotateDebugVector
 interface ScaleSliderProps {
   anchor: XRAnchor
   xrRefSpace: XRReferenceSpace | null
-  type: 'table' | 'bed' | 'sofa' | 'round-table'
+  type: 'tv' | 'bed' | 'sofa' | 'round-table'
   scale: number  // User scale multiplier (0.75 to 1.25)
   baseScale: number  // Asset-specific base scale factor
 }
@@ -1289,7 +1289,7 @@ function ModeController({ selectedObjectId, onToggleMode }: ModeControllerProps)
 }
 
 // Preload models for better performance
-useGLTF.preload('/asset/table.glb')
+useGLTF.preload('/asset/tv.glb')
 useGLTF.preload('/asset/bed.glb')
 useGLTF.preload('/asset/sofa.glb')
 useGLTF.preload('/asset/round-table.glb')

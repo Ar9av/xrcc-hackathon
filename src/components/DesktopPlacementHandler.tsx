@@ -4,14 +4,14 @@ import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 
 interface DesktopPlacementHandlerProps {
-  selectedObjectType: 'table' | 'bed' | 'sofa' | 'round-table' | null
+  selectedObjectType: 'tv' | 'bed' | 'sofa' | 'round-table' | null
   isDrawMode: boolean
 }
 
 interface PlacedObject {
   id: string
   position: THREE.Vector3
-  type: 'table' | 'bed' | 'sofa' | 'round-table'
+  type: 'tv' | 'bed' | 'sofa' | 'round-table'
 }
 
 export function DesktopPlacementHandler({ selectedObjectType, isDrawMode }: DesktopPlacementHandlerProps) {
@@ -103,7 +103,7 @@ export function DesktopPlacementHandler({ selectedObjectType, isDrawMode }: Desk
 
 interface DesktopPlacedObjectProps {
   position: THREE.Vector3
-  type: 'table' | 'bed' | 'sofa' | 'round-table'
+  type: 'tv' | 'bed' | 'sofa' | 'round-table'
 }
 
 function DesktopPlacedObject({ position, type }: DesktopPlacedObjectProps) {
@@ -150,9 +150,9 @@ function DesktopPlacedObject({ position, type }: DesktopPlacedObjectProps) {
     return cloned
   }, [scene])
 
-  // Scale factors: table 90% (10% reduction), bed 50% (50% reduction), sofa 100%, round-table 100%
+  // Scale factors: tv 90% (10% reduction), bed 50% (50% reduction), sofa 100%, round-table 100%
   const scale = useMemo(() => {
-    if (type === 'table') return 1.2
+    if (type === 'tv') return 1.2
     if (type === 'bed') return 0.9
     return 1.0
   }, [type])
@@ -173,7 +173,7 @@ function DesktopPlacedObject({ position, type }: DesktopPlacedObjectProps) {
 }
 
 // Preload models
-useGLTF.preload('/asset/table.glb')
+useGLTF.preload('/asset/tv.glb')
 useGLTF.preload('/asset/bed.glb')
 useGLTF.preload('/asset/sofa.glb')
 useGLTF.preload('/asset/round-table.glb')
