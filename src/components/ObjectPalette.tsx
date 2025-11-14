@@ -50,10 +50,10 @@ const furnitureData: FurnitureItem[] = [
   
   // Appliances category
   { id: 'tv', name: 'TV', category: 'appliances', image: '/asset/images/tv.png', hasModel: true, modelPath: '/asset/tv.glb' },
-  { id: 'refrigerator', name: 'Refrigerator', category: 'appliances', image: '/asset/images/tv.png', hasModel: false },
-  { id: 'microwave', name: 'Microwave', category: 'appliances', image: '/asset/images/tv.png', hasModel: false },
-  { id: 'washing-machine', name: 'Washing Machine', category: 'appliances', image: '/asset/images/tv.png', hasModel: false },
-  { id: 'dishwasher', name: 'Dishwasher', category: 'appliances', image: '/asset/images/tv.png', hasModel: false },
+  { id: 'refrigerator', name: 'Refrigerator', category: 'appliances', image: '/asset/images/refrigerator.png', hasModel: false },
+  { id: 'microwave', name: 'Microwave', category: 'appliances', image: '/asset/images/microwave.png', hasModel: false },
+  { id: 'washing-machine', name: 'Washing Machine', category: 'appliances', image: '/asset/images/washing-machine.png', hasModel: false },
+  { id: 'dishwasher', name: 'Dishwasher', category: 'appliances', image: '/asset/images/dishwasher.png', hasModel: false },
 ]
 
 type Category = 'all' | 'bed' | 'table' | 'wardrobe' | 'appliances'
