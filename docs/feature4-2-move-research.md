@@ -635,6 +635,336 @@ function SelectableObject({
 - Anchor stays at original placement location (AR tracking remains stable)
 - Rotation and scale work correctly around visual position
 
+### CRITICAL: Correct Position Update Pattern
+
+**Problem Discovered During Implementation:**
+
+There are two approaches to updating the object position, but only one is correct:
+
+#### ❌ INCORRECT Approach (Causes Velocity Bug):
+```tsx
+// In MoveController.updateMovement() - called every frame
+const delta = currentControllerPos.clone().sub(initialControllerPos)
+const movement = delta.multiplyScalar(SENSITIVITY)
+const projectedMovement = projectMovementOntoPlane(movement, ...)
+
+// In handleMoveObject() - called every frame
+setAnchoredObjects(prev => prev.map(obj => {
+  if (obj.id === selectedObjectId) {
+    // WRONG: Adding delta to current offset every frame
+    return { ...obj, movementOffset: obj.movementOffset.clone().add(deltaMovement) }
+  }
+  return obj
+}))
+```
+
+**Why This Fails:**
+- Frame 1: Hand moves 0.5m from start → delta = 0.5m → offset becomes 0 + 0.5 = 0.5m
+- Frame 2: Hand still at 0.5m from start → delta = 0.5m → offset becomes 0.5 + 0.5 = 1.0m
+- Frame 3: Hand still at 0.5m from start → delta = 0.5m → offset becomes 1.0 + 0.5 = 1.5m
+- Frame 4-∞: **Object keeps accelerating** even though hand is steady!
+
+At 90fps, this accumulates 0.5m × 90 = 45 meters per second of unwanted movement.
+
+#### ✅ CORRECT Approach (Direct Position Mapping):
+```tsx
+// In MoveController - store initial object position when grip pressed
+const initialMovementOffset = useRef<THREE.Vector3 | null>(null)
+
+const startMovement = (hand, controller) => {
+  // ... existing code ...
+
+  // NEW: Capture object's position when grip is first pressed
+  const objData = anchoredObjects.find(o => o.id === selectedObjectId)
+  if (objData) {
+    initialMovementOffset.current = objData.movementOffset.clone()
+  }
+}
+
+const updateMovement = (controller, state) => {
+  // ... calculate delta from initial controller position ...
+  const delta = currentControllerPos.clone().sub(initialControllerPos.current)
+  const movement = delta.multiplyScalar(SENSITIVITY)
+  const projectedMovement = projectMovementOntoPlane(movement, ...)
+
+  // NEW: Pass both initial offset and delta
+  onMove(selectedObjectId, initialMovementOffset.current, projectedMovement)
+}
+
+// In handleMoveObject() - called every frame
+const handleMoveObject = (
+  objectId: string,
+  initialOffset: THREE.Vector3,
+  deltaMovement: THREE.Vector3
+) => {
+  setAnchoredObjects(prev => prev.map(obj => {
+    if (obj.id === objectId) {
+      // CORRECT: Set offset to initial + delta (not accumulating)
+      return { ...obj, movementOffset: initialOffset.clone().add(deltaMovement) }
+    }
+    return obj
+  }))
+}
+```
+
+**Why This Works:**
+- Frame 1: Hand moves 0.5m from start → delta = 0.5m → offset = initial + 0.5m
+- Frame 2: Hand still at 0.5m from start → delta = 0.5m → offset = initial + 0.5m (same!)
+- Frame 3: Hand still at 0.5m from start → delta = 0.5m → offset = initial + 0.5m (no change)
+- Hand moves to 1.0m from start → delta = 1.0m → offset = initial + 1.0m
+- **Object position directly tracks hand position** - no accumulation, no velocity
+
+**Key Principle:**
+The object's position should be a **direct function** of the controller's current position, not an **accumulation** of frame-by-frame deltas. This gives you:
+- Predictable 1:1 mapping between hand and object
+- Object stops when hand stops
+- No unwanted acceleration or velocity
+- Smooth, responsive control
+
+**Alternative Simpler Approach:**
+Instead of passing both initial offset and delta, you could also just set the entire movement offset directly:
+```tsx
+// Calculate absolute position from hand movement
+const newOffset = initialMovementOffset.current.clone().add(projectedMovement)
+setAnchoredObjects(prev => prev.map(obj =>
+  obj.id === selectedObjectId ? { ...obj, movementOffset: newOffset } : obj
+))
+```
+
+This is conceptually clearer: "The object's offset IS the initial offset plus the hand's displacement."
+
+## CRITICAL: Correct Visualization Positioning Approaches
+
+**Problem Discovered During Implementation:**
+
+Different visualizations (rotate ring, scale slider, move axes) require different hierarchical approaches to position correctly and respond to object transforms (movement, rotation, scaling).
+
+### Three Approaches for Three Visualizations:
+
+#### 1. ✅ RotateRing - Child Inside Scaled Group
+
+**Hierarchy:**
+```tsx
+<group ref={groupRef} matrixAutoUpdate={false}>  // Object root
+  <group scale={finalScale}>                     // Scaled group
+    <primitive object={clonedScene} />           // Model
+
+    {isSelected && transformMode === 'rotate' && (
+      <RotateRing />  // ← Inside scaled group
+    )}
+  </group>
+</group>
+```
+
+**Positioning:**
+```tsx
+// Simple local positioning - parent handles all transforms
+<mesh position={[0, 0, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+  <ringGeometry args={[ringRadius * 0.925, ringRadius, 32]} />
+  <meshBasicMaterial color="yellow" side={THREE.DoubleSide} />
+</mesh>
+```
+
+**Why This Works:**
+- Ring is centered on object → position `[0, 0, 0]` in local space
+- Ring must scale with object → inside scaled group inherits scale automatically
+- Ring must rotate with object → inside object group inherits rotation automatically
+- Ring must move with object → inside object group inherits position automatically
+- No `useFrame` needed - parent transform handles everything
+
+**Result:** Ring perfectly tracks object position, rotation, and scale with zero code.
+
+---
+
+#### 2. ✅ MoveAxes - Child Inside Scaled Group (with Y offset)
+
+**Hierarchy:**
+```tsx
+<group ref={groupRef} matrixAutoUpdate={false}>  // Object root
+  <group scale={finalScale}>                     // Scaled group
+    <primitive object={clonedScene} />           // Model
+
+    {isSelected && transformMode === 'move' && (
+      <MoveAxes scale={scale} type={type} baseScale={baseScale} />  // ← Inside scaled group
+    )}
+  </group>
+</group>
+```
+
+**Positioning:**
+```tsx
+function MoveAxes({ scale, type, baseScale }: MoveAxesProps) {
+  // Calculate Y position in local space
+  const yPosition = useMemo(() => {
+    const scaledHeight = unscaledHeight * scale
+    const clearance = 0.3  // 30cm above object
+    return scaledHeight + clearance
+  }, [unscaledHeight, scale])
+
+  // Simple local positioning - parent handles all transforms
+  return (
+    <group position={[0, yPosition, 0]}>
+      <primitive object={xAxisArrow} />
+      <primitive object={yAxisArrow} />
+    </group>
+  )
+}
+```
+
+**Why This Works:**
+- Axes positioned above object → `yPosition = scaledHeight + clearance`
+- Axes must scale with object → inside scaled group inherits scale
+- Axes must rotate with object → inside object group inherits rotation (axes point along object's local X/Y)
+- Axes must move with object → inside object group inherits position
+- Only needs to recalculate `yPosition` when scale changes (useMemo optimization)
+
+**Result:** Axes perfectly track object and stay 30cm above, scaling and rotating automatically.
+
+---
+
+#### 3. ✅ ScaleSlider - Sibling Using `getWorldPosition()`
+
+**Hierarchy:**
+```tsx
+// At PlacementHandler level (OUTSIDE object hierarchy)
+{isSelected && transformMode === 'scale' && (
+  <ScaleSlider
+    objectRef={objectRef}  // Pass ref to track object
+    anchor={anchor}
+    xrRefSpace={xrRefSpace}
+    type={type}
+    scale={scale}
+    baseScale={baseScale}
+  />
+)}
+```
+
+**Positioning:**
+```tsx
+function ScaleSlider({ objectRef, anchor, ... }: ScaleSliderProps) {
+  useFrame((state) => {
+    if (!objectRef.current) return
+
+    // Get object's actual world position (includes movementOffset!)
+    const objectWorldPos = new THREE.Vector3()
+    objectRef.current.getWorldPosition(objectWorldPos)
+
+    // Get plane normal from anchor
+    const anchorPose = frame.getPose(anchor.anchorSpace, xrRefSpace)
+    const anchorMatrix = new THREE.Matrix4().fromArray(anchorPose.transform.matrix)
+    const anchorQuat = new THREE.Quaternion()
+    anchorMatrix.decompose(new THREE.Vector3(), anchorQuat, new THREE.Vector3())
+    const planeNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(anchorQuat)
+
+    // Position slider above object's world position
+    const scaledHeight = unscaledHeight * baseScale * scale
+    const clearance = 0.5
+    const sliderPos = objectWorldPos.clone()
+      .add(planeNormal.clone().multiplyScalar(scaledHeight + clearance))
+
+    sliderGroupRef.current.position.copy(sliderPos)
+
+    // Always vertical (global Y-axis) - NOT rotated with object
+    sliderGroupRef.current.quaternion.set(0, 0, 0, 1)
+  })
+}
+```
+
+**Why This Works:**
+- Slider must NOT rotate with object → rendered as sibling (outside object hierarchy)
+- Slider must NOT scale with object → rendered as sibling
+- Slider MUST follow object when moved → uses `objectRef.current.getWorldPosition()`
+- Slider must stay vertical → explicitly sets identity quaternion (global Y-axis)
+- Uses `useFrame` to continuously track object's world position
+
+**Critical Insight:** `objectRef.current.getWorldPosition()` automatically includes `movementOffset` because the object's matrix is composed with `anchorPos + movementOffset` in `SelectableObject.useFrame`.
+
+---
+
+### Why Not Use Anchor Position for ScaleSlider?
+
+**❌ WRONG Approach (doesn't track movement):**
+```tsx
+// Get anchor position (ORIGINAL placement location)
+const anchorPos = new THREE.Vector3()
+anchorMatrix.decompose(anchorPos, anchorQuat, new THREE.Vector3())
+
+// Position slider above anchor
+const sliderPos = anchorPos.clone()  // ← BUG: Doesn't include movementOffset!
+  .add(planeNormal.clone().multiplyScalar(scaledHeight + clearance))
+```
+
+**Problem:** Anchor position is the ORIGINAL placement location, not the current visual position after movement. The slider would stay at the original position even when the object is moved.
+
+**✅ CORRECT Approach (tracks movement):**
+```tsx
+// Get object's world position (includes movementOffset)
+const objectWorldPos = new THREE.Vector3()
+objectRef.current.getWorldPosition(objectWorldPos)
+
+// Position slider above object's current position
+const sliderPos = objectWorldPos.clone()  // ✓ Includes movementOffset automatically!
+  .add(planeNormal.clone().multiplyScalar(scaledHeight + clearance))
+```
+
+---
+
+### Decision Matrix: When to Use Each Approach
+
+| Visualization | Must Scale? | Must Rotate? | Must Stay Vertical? | Approach | Hierarchy |
+|--------------|------------|--------------|-------------------|----------|-----------|
+| **RotateRing** | ✓ Yes | ✓ Yes | ✗ No (lies on plane) | Child in scaled group | Inside |
+| **MoveAxes** | ✓ Yes | ✓ Yes | ✗ No (follow object) | Child in scaled group | Inside |
+| **ScaleSlider** | ✗ No | ✗ No | ✓ Yes (global Y) | Sibling + getWorldPosition | Outside |
+
+**General Rule:**
+- **If visualization should inherit transforms** (scale, rotation, position) → Render as **child** inside scaled group
+- **If visualization should NOT inherit some transforms** → Render as **sibling** and use `getWorldPosition()` to track
+
+---
+
+### Passing Refs to Children
+
+**Problem:** ScaleSlider needs access to the object's group ref to call `getWorldPosition()`.
+
+**Solution:** Use `React.forwardRef` and ref map:
+
+```tsx
+// In PlacementHandler - create ref map for all objects
+const objectRefsMap = useRef<Map<string, React.RefObject<THREE.Group>>>(new Map())
+
+{anchoredObjects.map(({ id, ... }) => {
+  // Get or create ref for this object
+  if (!objectRefsMap.current.has(id)) {
+    objectRefsMap.current.set(id, { current: null })
+  }
+  const objectRef = objectRefsMap.current.get(id)!
+
+  return (
+    <>
+      <SelectableObject ref={objectRef} ... />
+      {isSelected && transformMode === 'scale' && (
+        <ScaleSlider objectRef={objectRef} ... />  // Pass ref to sibling
+      )}
+    </>
+  )
+})}
+
+// Make SelectableObject a forwardRef component
+const SelectableObject = React.forwardRef<THREE.Group, SelectableObjectProps>(
+  function SelectableObject({ ... }, ref) {
+    const groupRef = (ref as React.RefObject<THREE.Group>) || useRef<THREE.Group>(null)
+    // ...
+  }
+)
+```
+
+**Why This Works:**
+- Map stores refs indexed by object ID
+- Refs persist across re-renders
+- Parent passes ref to both child (SelectableObject) and sibling (ScaleSlider)
+- ScaleSlider can access object's transform via `objectRef.current.getWorldPosition()`
+
 ## Performance Considerations
 
 ### Controller Position Tracking
@@ -972,15 +1302,17 @@ function MoveAxes({ objectRef, anchor, xrRefSpace, rotation, scale, baseScale }:
 interface MoveControllerProps {
   selectedObjectId: string | null
   transformMode: TransformMode
-  onMove: (objectId: string, deltaMovement: THREE.Vector3) => void
-  getObjectData: (objectId: string) => { anchor: XRAnchor, rotation: number } | null
+  onMove: (objectId: string, initialOffset: THREE.Vector3, deltaMovement: THREE.Vector3) => void
+  anchoredObjects: Array<{ id: string, anchor: XRAnchor, rotation: number, movementOffset: THREE.Vector3 }>
+  xrRefSpace: XRReferenceSpace | null
 }
 
 function MoveController({
   selectedObjectId,
   transformMode,
   onMove,
-  getObjectData
+  anchoredObjects,
+  xrRefSpace
 }: MoveControllerProps) {
   const leftController = useXRInputSourceState('controller', 'left')
   const rightController = useXRInputSourceState('controller', 'right')
@@ -990,23 +1322,16 @@ function MoveController({
   const isMoving = useRef(false)
   const activeHand = useRef<'left' | 'right' | null>(null)
   const initialControllerPos = useRef<THREE.Vector3 | null>(null)
-  const accumulatedMovement = useRef(new THREE.Vector3())
+  const initialMovementOffset = useRef<THREE.Vector3 | null>(null)  // CRITICAL: Store initial object position
 
   // Previous grip states for edge detection
   const prevLeftGrip = useRef(false)
   const prevRightGrip = useRef(false)
 
-  useFrame((state, delta) => {
+  useFrame((state) => {
     // Only active when object selected and in move mode
-    if (!selectedObjectId || transformMode !== 'move') {
-      if (isMoving.current) {
-        // Apply accumulated movement on mode exit
-        if (accumulatedMovement.current.length() > 0.01) {
-          onMove(selectedObjectId, accumulatedMovement.current)
-          accumulatedMovement.current.set(0, 0, 0)
-        }
-        isMoving.current = false
-      }
+    if (!selectedObjectId || transformMode !== 'move' || !session || !xrRefSpace) {
+      isMoving.current = false
       return
     }
 
@@ -1028,12 +1353,12 @@ function MoveController({
     // Handle ongoing movement
     if (isMoving.current && activeHand.current) {
       const controller = activeHand.current === 'left' ? leftController : rightController
-      updateMovement(controller, selectedObjectId)
+      updateMovement(controller, state)
     }
 
     // Detect grip release
     if (isMoving.current && !leftGrip && !rightGrip) {
-      finishMovement(selectedObjectId)
+      finishMovement()
     }
 
     // Update previous states
@@ -1042,21 +1367,27 @@ function MoveController({
   })
 
   const startMovement = (hand: 'left' | 'right', controller: any) => {
-    if (!controller?.object) return
+    if (!controller?.object || !selectedObjectId) return
 
     isMoving.current = true
     activeHand.current = hand
 
+    // Capture initial controller position
     const controllerPos = new THREE.Vector3()
     controller.object.getWorldPosition(controllerPos)
     initialControllerPos.current = controllerPos.clone()
-    accumulatedMovement.current.set(0, 0, 0)
+
+    // CRITICAL: Capture object's current position when grip is pressed
+    const objData = anchoredObjects.find(o => o.id === selectedObjectId)
+    if (objData) {
+      initialMovementOffset.current = objData.movementOffset.clone()
+    }
 
     console.log(`Movement started - ${hand} grip pressed`)
   }
 
-  const updateMovement = (controller: any, objectId: string) => {
-    if (!controller?.object || !initialControllerPos.current) return
+  const updateMovement = (controller: any, state: any) => {
+    if (!controller?.object || !initialControllerPos.current || !initialMovementOffset.current || !selectedObjectId || !xrRefSpace) return
 
     // Get current controller position
     const currentPos = new THREE.Vector3()
@@ -1066,36 +1397,34 @@ function MoveController({
     const delta = currentPos.clone().sub(initialControllerPos.current)
 
     // Apply sensitivity
-    const SENSITIVITY = 2.0
+    const SENSITIVITY = 1.0
     const movement = delta.multiplyScalar(SENSITIVITY)
 
-    // Get object data (anchor, rotation)
-    const objData = getObjectData(objectId)
+    // Get selected object data
+    const objData = anchoredObjects.find(o => o.id === selectedObjectId)
     if (!objData) return
 
     // Get anchor pose
     const frame = state.gl.xr.getFrame()
-    const anchorPose = frame?.getPose(objData.anchor.anchorSpace, xrRefSpace)
+    if (!frame) return
+
+    const anchorPose = frame.getPose(objData.anchor.anchorSpace, xrRefSpace)
     if (!anchorPose) return
 
     // Project movement onto object's plane
     const projectedMovement = projectMovementOntoPlane(movement, anchorPose, objData.rotation)
 
-    // Accumulate movement
-    accumulatedMovement.current.copy(projectedMovement)
+    // CRITICAL: Pass both initial offset and delta to update handler
+    // This sets position = initial + delta (not accumulating each frame)
+    onMove(selectedObjectId, initialMovementOffset.current, projectedMovement)
   }
 
-  const finishMovement = (objectId: string) => {
-    // Apply accumulated movement
-    if (accumulatedMovement.current.length() > 0.01) {
-      onMove(objectId, accumulatedMovement.current)
-    }
-
+  const finishMovement = () => {
     // Reset state
     isMoving.current = false
     activeHand.current = null
     initialControllerPos.current = null
-    accumulatedMovement.current.set(0, 0, 0)
+    initialMovementOffset.current = null
 
     console.log('Movement finished - grip released')
   }
@@ -1140,12 +1469,20 @@ function MoveController({
 ```tsx
 // In PlacementHandler component
 
-const handleMoveObject = (objectId: string, deltaMovement: THREE.Vector3) => {
-  setAnchoredObjects(prev => prev.map(o =>
-    o.id === objectId
-      ? { ...o, movementOffset: o.movementOffset.clone().add(deltaMovement) }
-      : o
-  ))
+// CORRECT: Set position to initial + delta (not accumulating)
+const handleMoveObject = (
+  objectId: string,
+  initialOffset: THREE.Vector3,
+  deltaMovement: THREE.Vector3
+) => {
+  setAnchoredObjects(prev => prev.map(o => {
+    if (o.id === objectId) {
+      // Set offset to initial + delta (direct position mapping)
+      const newOffset = initialOffset.clone().add(deltaMovement)
+      return { ...o, movementOffset: newOffset }
+    }
+    return o
+  }))
 }
 
 // Usage in SelectableObject
