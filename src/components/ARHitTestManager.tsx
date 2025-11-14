@@ -259,7 +259,7 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
   const [transformMode, setTransformMode] = useState<TransformMode>('rotate')
 
   // Store refs to object groups for visualization positioning
-  const objectRefsMap = useRef<Map<string, React.RefObject<THREE.Group>>>(new Map())
+  const objectRefsMap = useRef<Map<string, React.RefObject<THREE.Group | null>>>(new Map())
 
   // Feature 4.1: Delete handler
   const handleDeleteSelected = () => {
@@ -379,7 +379,7 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
 
         // Get or create ref for this object
         if (!objectRefsMap.current.has(id)) {
-          objectRefsMap.current.set(id, { current: null })
+          objectRefsMap.current.set(id, React.createRef<THREE.Group>())
         }
         const objectRef = objectRefsMap.current.get(id)!
 
@@ -609,7 +609,6 @@ const SelectableObject = React.forwardRef<THREE.Group, SelectableObjectProps>(
           <MoveAxes
             scale={scale}
             type={type}
-            baseScale={baseScale}
           />
         )}
       </group>
@@ -924,11 +923,10 @@ function ScaleSlider({ objectRef, anchor, xrRefSpace, type, scale, baseScale }: 
  */
 interface MoveAxesProps {
   scale: number     // Object's user scale (0.75 to 1.25)
-  type: 'table' | 'bed' | 'sofa' | 'round-table'
-  baseScale: number // Asset-specific base scale
+  type: 'tv' | 'bed' | 'sofa' | 'round-table'
 }
 
-function MoveAxes({ scale, type, baseScale }: MoveAxesProps) {
+function MoveAxes({ scale, type }: MoveAxesProps) {
   // Load GLB model to calculate actual object dimensions
   const modelPath = type === 'round-table' ? '/asset/round-table.glb' : `/asset/${type}.glb`
   const { scene } = useGLTF(modelPath)
