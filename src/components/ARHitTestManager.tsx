@@ -947,18 +947,18 @@ function MoveAxes({ scale, type, baseScale }: MoveAxesProps) {
     return scaledHeight + clearance
   }, [unscaledHeight, scale])
 
-  // Calculate axes length based on model size
+  // Calculate axes length based on model size (half size for crosshair visibility)
   const axesLength = useMemo(() => {
     const box = new THREE.Box3().setFromObject(scene)
     const size = box.getSize(new THREE.Vector3())
     const maxDim = Math.max(size.x, size.z)  // Use X and Z (not Y which is height)
-    return (maxDim / 2) + 0.2  // Half of max dimension + 20cm clearance
+    return ((maxDim / 2) + 0.2) / 2  // Half of (half dimension + clearance)
   }, [scene])
 
-  // Create arrow helpers (red, pointing X and Z in local space for plane movement)
-  const xAxisArrow = useMemo(() =>
+  // Create crosshair arrows (red, pointing +X, -X, +Z, -Z in local space for plane movement)
+  const xPosArrow = useMemo(() =>
     new THREE.ArrowHelper(
-      new THREE.Vector3(1, 0, 0),  // Local X direction
+      new THREE.Vector3(1, 0, 0),  // +X direction
       new THREE.Vector3(0, 0, 0),  // Origin
       axesLength,
       0xff0000,  // Red
@@ -967,9 +967,31 @@ function MoveAxes({ scale, type, baseScale }: MoveAxesProps) {
     ), [axesLength]
   )
 
-  const zAxisArrow = useMemo(() =>
+  const xNegArrow = useMemo(() =>
     new THREE.ArrowHelper(
-      new THREE.Vector3(0, 0, 1),  // Local Z direction
+      new THREE.Vector3(-1, 0, 0),  // -X direction
+      new THREE.Vector3(0, 0, 0),  // Origin
+      axesLength,
+      0xff0000,  // Red
+      0.1,
+      0.05
+    ), [axesLength]
+  )
+
+  const zPosArrow = useMemo(() =>
+    new THREE.ArrowHelper(
+      new THREE.Vector3(0, 0, 1),  // +Z direction
+      new THREE.Vector3(0, 0, 0),  // Origin
+      axesLength,
+      0xff0000,  // Red
+      0.1,
+      0.05
+    ), [axesLength]
+  )
+
+  const zNegArrow = useMemo(() =>
+    new THREE.ArrowHelper(
+      new THREE.Vector3(0, 0, -1),  // -Z direction
       new THREE.Vector3(0, 0, 0),  // Origin
       axesLength,
       0xff0000,  // Red
@@ -981,8 +1003,10 @@ function MoveAxes({ scale, type, baseScale }: MoveAxesProps) {
   // Simple child positioned in local space - parent handles all transforms
   return (
     <group position={[0, yPosition, 0]}>
-      <primitive object={xAxisArrow} />
-      <primitive object={zAxisArrow} />
+      <primitive object={xPosArrow} />
+      <primitive object={xNegArrow} />
+      <primitive object={zPosArrow} />
+      <primitive object={zNegArrow} />
     </group>
   )
 }
