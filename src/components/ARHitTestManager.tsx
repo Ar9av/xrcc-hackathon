@@ -248,6 +248,7 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
     type: 'tv' | 'bed' | 'sofa' | 'round-table'
     rotation: number  // Feature 4.2: Rotation angle in radians around plane normal
     scale: number  // Feature 4.2: Scale multiplier (0.75 to 1.25, default 1.0 = 100%)
+    movementOffset: THREE.Vector3  // Feature 4.2: Movement offset from anchor position
   }>>([])
 
   // Feature 4.1: Selection state
@@ -256,6 +257,9 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
 
   // Feature 4.2: Transform mode state (default is rotate)
   const [transformMode, setTransformMode] = useState<TransformMode>('rotate')
+
+  // Store refs to object groups for visualization positioning
+  const objectRefsMap = useRef<Map<string, React.RefObject<THREE.Group>>>(new Map())
 
   // Feature 4.1: Delete handler
   const handleDeleteSelected = () => {
@@ -293,6 +297,20 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
         // Clamp to range [0.75, 1.25]
         const clampedScale = Math.max(0.75, Math.min(1.25, newScale))
         return { ...obj, scale: clampedScale }
+      }
+      return obj
+    }))
+  }
+
+  // Feature 4.2: Move handler - sets position to initial + delta (not accumulating)
+  const handleMoveObject = (initialOffset: THREE.Vector3, deltaMovement: THREE.Vector3) => {
+    if (!selectedObjectId) return
+
+    setAnchoredObjects(prev => prev.map(obj => {
+      if (obj.id === selectedObjectId) {
+        // CORRECT: Set offset to initial + delta (direct position mapping)
+        const newOffset = initialOffset.clone().add(deltaMovement)
+        return { ...obj, movementOffset: newOffset }
       }
       return obj
     }))
@@ -337,7 +355,8 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
             anchor: anchor,
             type: selectedObjectType,
             rotation: 0,  // Feature 4.2: Initialize rotation to 0
-            scale: 1.0  // Feature 4.2: Initialize scale to 1.0 (100%)
+            scale: 1.0,  // Feature 4.2: Initialize scale to 1.0 (100%)
+            movementOffset: new THREE.Vector3(0, 0, 0)  // Feature 4.2: Initialize movement offset to zero
           }])
 
           // Exit draw mode after placing one object to prevent accidental placement when selecting
@@ -355,17 +374,26 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
 
   return (
     <>
-      {anchoredObjects.map(({ id, anchor, type, rotation, scale }) => {
+      {anchoredObjects.map(({ id, anchor, type, rotation, scale, movementOffset }) => {
         const isSelected = selectedObjectId === id
+
+        // Get or create ref for this object
+        if (!objectRefsMap.current.has(id)) {
+          objectRefsMap.current.set(id, { current: null })
+        }
+        const objectRef = objectRefsMap.current.get(id)!
+
         return (
           <React.Fragment key={id}>
             <SelectableObject
+              ref={objectRef}
               id={id}
               anchor={anchor}
               xrRefSpace={xrRefSpace}
               type={type}
               rotation={rotation}
               scale={scale}
+              movementOffset={movementOffset}
               isSelected={isSelected}
               transformMode={transformMode}
               onSelect={(id) => {
@@ -377,6 +405,7 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
             {/* Render ScaleSlider outside object hierarchy for correct world-space positioning */}
             {isSelected && transformMode === 'scale' && (
               <ScaleSlider
+                objectRef={objectRef}
                 anchor={anchor}
                 xrRefSpace={xrRefSpace}
                 type={type}
@@ -394,7 +423,7 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
         onDeleteSelected={handleDeleteSelected}
       />
 
-      {/* Feature 4.2: Rotation, scale, and mode controllers */}
+      {/* Feature 4.2: Rotation, scale, move, and mode controllers */}
       <RotationController
         selectedObjectId={selectedObjectId}
         transformMode={transformMode}
@@ -404,6 +433,13 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
         selectedObjectId={selectedObjectId}
         transformMode={transformMode}
         onScale={handleScale}
+      />
+      <MoveController
+        selectedObjectId={selectedObjectId}
+        transformMode={transformMode}
+        onMove={handleMoveObject}
+        anchoredObjects={anchoredObjects}
+        xrRefSpace={xrRefSpace}
       />
       <ModeController
         selectedObjectId={selectedObjectId}
@@ -436,14 +472,16 @@ interface SelectableObjectProps {
   type: 'tv' | 'bed' | 'sofa' | 'round-table'
   rotation: number  // Feature 4.2: Rotation angle in radians
   scale: number  // Feature 4.2: Scale multiplier (0.75 to 1.25)
+  movementOffset: THREE.Vector3  // Feature 4.2: Movement offset from anchor
   isSelected: boolean
   transformMode: TransformMode  // Feature 4.2: Current transform mode
   onSelect: (id: string) => void
 }
 
-function SelectableObject({ id, anchor, xrRefSpace, type, rotation, scale, isSelected, transformMode, onSelect }: SelectableObjectProps) {
-  const groupRef = useRef<THREE.Group>(null)
-  const { session } = useXR()
+const SelectableObject = React.forwardRef<THREE.Group, SelectableObjectProps>(
+  function SelectableObject({ id, anchor, xrRefSpace, type, rotation, scale, movementOffset, isSelected, transformMode, onSelect }, ref) {
+    const groupRef = (ref as React.RefObject<THREE.Group>) || useRef<THREE.Group>(null)
+    const { session } = useXR()
 
   // Handle click for selection (Feature 4.1)
   const handleClick = (event: ThreeEvent<MouseEvent>) => {
@@ -540,8 +578,10 @@ function SelectableObject({ id, anchor, xrRefSpace, type, rotation, scale, isSel
     // Extract plane normal from anchor orientation (Y-axis)
     const planeNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(anchorQuat)
 
-    // Position object at anchor point + offset along plane normal
-    const finalPos = anchorPos.clone().add(planeNormal.clone().multiplyScalar(yOffset * finalScale))
+    // Position object at anchor point + movement offset + Y offset along plane normal
+    const finalPos = anchorPos.clone()
+      .add(movementOffset)  // Apply user movement offset
+      .add(planeNormal.clone().multiplyScalar(yOffset * finalScale))  // Apply Y offset for object base
 
     // Apply user rotation around plane normal
     let finalQuat = anchorQuat.clone()
@@ -558,52 +598,24 @@ function SelectableObject({ id, anchor, xrRefSpace, type, rotation, scale, isSel
     <group ref={groupRef} matrixAutoUpdate={false} onClick={handleClick}>
       <group scale={finalScale}>
         <primitive object={clonedScene} />
-      </group>
 
-      {/* Feature 4.2: Mode-specific visual feedback (rotate/move only, scale is rendered outside) */}
-      {isSelected && (
-        <ModificationVisuals
-          mode={transformMode}
-          objectRef={groupRef}
-          anchor={anchor}
-          xrRefSpace={xrRefSpace}
-        />
-      )}
+        {/* Rotate ring inside scale group to inherit scaling */}
+        {isSelected && transformMode === 'rotate' && (
+          <RotateRing objectRef={groupRef} anchor={anchor} xrRefSpace={xrRefSpace} />
+        )}
+
+        {/* Move axes inside scale group to inherit scaling and position */}
+        {isSelected && transformMode === 'move' && (
+          <MoveAxes
+            scale={scale}
+            type={type}
+            baseScale={baseScale}
+          />
+        )}
+      </group>
     </group>
   )
-}
-
-/**
- * ModificationVisuals - Container for mode-specific visual feedback
- *
- * Feature 4.2: Shows different visuals based on active transform mode
- * - Rotate mode: Yellow ring around object
- * - Scale mode: Slider rendered at PlacementHandler level (outside this hierarchy)
- * - Move mode: Placeholder (red axes - to be implemented)
- */
-interface ModificationVisualsProps {
-  mode: TransformMode
-  objectRef: React.RefObject<THREE.Group | null>
-  anchor: XRAnchor
-  xrRefSpace: XRReferenceSpace | null
-}
-
-function ModificationVisuals({ mode, objectRef, anchor, xrRefSpace }: ModificationVisualsProps) {
-  return (
-    <>
-      {mode === 'rotate' && (
-        <RotateRing objectRef={objectRef} anchor={anchor} xrRefSpace={xrRefSpace} />
-      )}
-      {mode === 'move' && (
-        // Placeholder for Feature 4.2.3
-        <mesh position={[0, 1, 0]}>
-          <boxGeometry args={[0.1, 0.1, 0.1]} />
-          <meshBasicMaterial color="red" />
-        </mesh>
-      )}
-    </>
-  )
-}
+})
 
 /**
  * RotateRing - Yellow ring visual for rotate mode
@@ -791,7 +803,8 @@ function RotateDebugVectors({ objectRef, anchor, xrRefSpace }: RotateDebugVector
  *
  * Positioning: Perpendicular to placement plane with 50cm clearance above actual object height.
  *   - Height calculated from GLB model using Box3.setFromObject (cached in useMemo)
- *   - Position = anchor + (scaledHeight + 0.5m) * planeNormal
+ *   - Position = objectWorldPos + (scaledHeight + 0.5m) * planeNormal
+ *   - Uses objectRef.getWorldPosition() to track object after movement
  *
  * Orientation: Always aligned with global Y-axis (identity quaternion).
  *
@@ -799,6 +812,7 @@ function RotateDebugVectors({ objectRef, anchor, xrRefSpace }: RotateDebugVector
  * inheriting parent transforms. World-space positioning requires independent hierarchy.
  */
 interface ScaleSliderProps {
+  objectRef: React.RefObject<THREE.Group | null>  // To track object position after movement
   anchor: XRAnchor
   xrRefSpace: XRReferenceSpace | null
   type: 'tv' | 'bed' | 'sofa' | 'round-table'
@@ -806,7 +820,7 @@ interface ScaleSliderProps {
   baseScale: number  // Asset-specific base scale factor
 }
 
-function ScaleSlider({ anchor, xrRefSpace, type, scale, baseScale }: ScaleSliderProps) {
+function ScaleSlider({ objectRef, anchor, xrRefSpace, type, scale, baseScale }: ScaleSliderProps) {
   const sliderGroupRef = useRef<THREE.Group>(null)
   const { session } = useXR()
 
@@ -849,7 +863,7 @@ function ScaleSlider({ anchor, xrRefSpace, type, scale, baseScale }: ScaleSlider
 
   // Update slider position each frame to track object and maintain clearance
   useFrame((state) => {
-    if (!session || !xrRefSpace || !sliderGroupRef.current) return
+    if (!session || !xrRefSpace || !sliderGroupRef.current || !objectRef.current) return
 
     const frame = state.gl.xr.getFrame()
     if (!frame?.trackedAnchors?.has(anchor)) return
@@ -857,11 +871,14 @@ function ScaleSlider({ anchor, xrRefSpace, type, scale, baseScale }: ScaleSlider
     const anchorPose = frame.getPose(anchor.anchorSpace, xrRefSpace)
     if (!anchorPose) return
 
-    // Extract anchor position and orientation from pose matrix
+    // Get object's actual world position (includes movementOffset)
+    const objectWorldPos = new THREE.Vector3()
+    objectRef.current.getWorldPosition(objectWorldPos)
+
+    // Extract anchor orientation for plane normal
     const anchorMatrix = new THREE.Matrix4().fromArray(anchorPose.transform.matrix)
-    const anchorPos = new THREE.Vector3()
     const anchorQuat = new THREE.Quaternion()
-    anchorMatrix.decompose(anchorPos, anchorQuat, new THREE.Vector3())
+    anchorMatrix.decompose(new THREE.Vector3(), anchorQuat, new THREE.Vector3())
 
     // Plane normal is anchor's Y-axis (perpendicular to placement surface)
     const planeNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(anchorQuat)
@@ -871,7 +888,7 @@ function ScaleSlider({ anchor, xrRefSpace, type, scale, baseScale }: ScaleSlider
 
     // Position slider 50cm above object top, along plane normal
     const clearance = 0.5
-    const sliderPos = anchorPos.clone()
+    const sliderPos = objectWorldPos.clone()
       .add(planeNormal.clone().multiplyScalar(scaledHeight + clearance))
 
     sliderGroupRef.current.position.copy(sliderPos)
@@ -895,6 +912,275 @@ function ScaleSlider({ anchor, xrRefSpace, type, scale, baseScale }: ScaleSlider
       </mesh>
     </group>
   )
+}
+
+/**
+ * MoveAxes - Visual axes for move mode
+ *
+ * Feature 4.2: Shows two perpendicular red axes above the selected object.
+ * - Positioned in local space at [0, scaledHeight + clearance, 0]
+ * - Inherits parent transform (moves and scales with object automatically)
+ * - Red color for both X and Z axes (movement along the plane)
+ */
+interface MoveAxesProps {
+  scale: number     // Object's user scale (0.75 to 1.25)
+  type: 'table' | 'bed' | 'sofa' | 'round-table'
+  baseScale: number // Asset-specific base scale
+}
+
+function MoveAxes({ scale, type, baseScale }: MoveAxesProps) {
+  // Load GLB model to calculate actual object dimensions
+  const modelPath = type === 'round-table' ? '/asset/round-table.glb' : `/asset/${type}.glb`
+  const { scene } = useGLTF(modelPath)
+
+  // Cache unscaled object height
+  const unscaledHeight = useMemo(() => {
+    const box = new THREE.Box3().setFromObject(scene)
+    const size = box.getSize(new THREE.Vector3())
+    return size.y
+  }, [scene])
+
+  // Calculate Y position: scaledHeight + clearance (in local space, will be scaled by parent)
+  const yPosition = useMemo(() => {
+    const scaledHeight = unscaledHeight * scale
+    const clearance = 0.3
+    return scaledHeight + clearance
+  }, [unscaledHeight, scale])
+
+  // Calculate axes length based on model size (half size for crosshair visibility)
+  const axesLength = useMemo(() => {
+    const box = new THREE.Box3().setFromObject(scene)
+    const size = box.getSize(new THREE.Vector3())
+    const maxDim = Math.max(size.x, size.z)  // Use X and Z (not Y which is height)
+    return ((maxDim / 2) + 0.2) / 2  // Half of (half dimension + clearance)
+  }, [scene])
+
+  // Create crosshair arrows (red, pointing +X, -X, +Z, -Z in local space for plane movement)
+  const xPosArrow = useMemo(() =>
+    new THREE.ArrowHelper(
+      new THREE.Vector3(1, 0, 0),  // +X direction
+      new THREE.Vector3(0, 0, 0),  // Origin
+      axesLength,
+      0xff0000,  // Red
+      0.1,
+      0.05
+    ), [axesLength]
+  )
+
+  const xNegArrow = useMemo(() =>
+    new THREE.ArrowHelper(
+      new THREE.Vector3(-1, 0, 0),  // -X direction
+      new THREE.Vector3(0, 0, 0),  // Origin
+      axesLength,
+      0xff0000,  // Red
+      0.1,
+      0.05
+    ), [axesLength]
+  )
+
+  const zPosArrow = useMemo(() =>
+    new THREE.ArrowHelper(
+      new THREE.Vector3(0, 0, 1),  // +Z direction
+      new THREE.Vector3(0, 0, 0),  // Origin
+      axesLength,
+      0xff0000,  // Red
+      0.1,
+      0.05
+    ), [axesLength]
+  )
+
+  const zNegArrow = useMemo(() =>
+    new THREE.ArrowHelper(
+      new THREE.Vector3(0, 0, -1),  // -Z direction
+      new THREE.Vector3(0, 0, 0),  // Origin
+      axesLength,
+      0xff0000,  // Red
+      0.1,
+      0.05
+    ), [axesLength]
+  )
+
+  // Simple child positioned in local space - parent handles all transforms
+  return (
+    <group position={[0, yPosition, 0]}>
+      <primitive object={xPosArrow} />
+      <primitive object={xNegArrow} />
+      <primitive object={zPosArrow} />
+      <primitive object={zNegArrow} />
+    </group>
+  )
+}
+
+/**
+ * MoveController - Handles grip button input for object movement
+ *
+ * Feature 4.2: Monitors grip button on both controllers and enables object dragging
+ * - Only active when object selected and in move mode
+ * - Hold grip button and drag hand to move object
+ * - Movement constrained to placement plane along local X and Z axes
+ * - Sensitivity: 2.0 (hand moves 1m, object moves 2m)
+ * - Latest input wins when both grips pressed
+ */
+interface MoveControllerProps {
+  selectedObjectId: string | null
+  transformMode: TransformMode
+  onMove: (initialOffset: THREE.Vector3, deltaMovement: THREE.Vector3) => void
+  anchoredObjects: Array<{
+    id: string
+    anchor: XRAnchor
+    rotation: number
+    movementOffset: THREE.Vector3
+  }>
+  xrRefSpace: XRReferenceSpace | null
+}
+
+function MoveController({ selectedObjectId, transformMode, onMove, anchoredObjects, xrRefSpace }: MoveControllerProps) {
+  const leftController = useXRInputSourceState('controller', 'left')
+  const rightController = useXRInputSourceState('controller', 'right')
+  const { session } = useXR()
+
+  // Movement state
+  const isMoving = useRef(false)
+  const activeHand = useRef<'left' | 'right' | null>(null)
+  const initialControllerPos = useRef<THREE.Vector3 | null>(null)
+  const initialMovementOffset = useRef<THREE.Vector3 | null>(null)  // CRITICAL: Store initial object position
+
+  // Previous grip states for edge detection
+  const prevLeftGrip = useRef(false)
+  const prevRightGrip = useRef(false)
+
+  useFrame((state) => {
+    // Only active when object selected and in move mode
+    if (!selectedObjectId || transformMode !== 'move' || !session || !xrRefSpace) {
+      isMoving.current = false
+      return
+    }
+
+    // Check grip button states
+    const leftGrip = leftController?.gamepad?.['xr-standard-squeeze']?.state === 'pressed'
+    const rightGrip = rightController?.gamepad?.['xr-standard-squeeze']?.state === 'pressed'
+
+    // Detect grip press (edge: false → true)
+    const leftGripPressed = leftGrip && !prevLeftGrip.current
+    const rightGripPressed = rightGrip && !prevRightGrip.current
+
+    // Handle grip press - start movement
+    if (leftGripPressed && leftController?.object) {
+      startMovement('left', leftController)
+    } else if (rightGripPressed && rightController?.object) {
+      startMovement('right', rightController)
+    }
+
+    // Handle ongoing movement
+    if (isMoving.current && activeHand.current) {
+      const controller = activeHand.current === 'left' ? leftController : rightController
+      updateMovement(controller, state)
+    }
+
+    // Detect grip release
+    if (isMoving.current && !leftGrip && !rightGrip) {
+      finishMovement()
+    }
+
+    // Update previous states
+    prevLeftGrip.current = leftGrip
+    prevRightGrip.current = rightGrip
+  })
+
+  const startMovement = (hand: 'left' | 'right', controller: any) => {
+    if (!controller?.object || !selectedObjectId) return
+
+    isMoving.current = true
+    activeHand.current = hand
+
+    // Capture initial controller position
+    const controllerPos = new THREE.Vector3()
+    controller.object.getWorldPosition(controllerPos)
+    initialControllerPos.current = controllerPos.clone()
+
+    // CRITICAL: Capture object's current position when grip is pressed
+    const objData = anchoredObjects.find(o => o.id === selectedObjectId)
+    if (objData) {
+      initialMovementOffset.current = objData.movementOffset.clone()
+    }
+
+    console.log(`Movement started - ${hand} grip pressed`)
+  }
+
+  const updateMovement = (controller: any, state: any) => {
+    if (!controller?.object || !initialControllerPos.current || !initialMovementOffset.current || !selectedObjectId || !xrRefSpace) return
+
+    // Get current controller position
+    const currentPos = new THREE.Vector3()
+    controller.object.getWorldPosition(currentPos)
+
+    // Calculate delta from initial position
+    const delta = currentPos.clone().sub(initialControllerPos.current)
+
+    // Apply sensitivity
+    const SENSITIVITY = 2.0
+    const movement = delta.multiplyScalar(SENSITIVITY)
+
+    // Get selected object data
+    const objData = anchoredObjects.find(o => o.id === selectedObjectId)
+    if (!objData) return
+
+    // Get anchor pose
+    const frame = state.gl.xr.getFrame()
+    if (!frame) return
+
+    const anchorPose = frame.getPose(objData.anchor.anchorSpace, xrRefSpace)
+    if (!anchorPose) return
+
+    // Project movement onto object's plane
+    const projectedMovement = projectMovementOntoPlane(movement, anchorPose, objData.rotation)
+
+    // CRITICAL: Pass both initial offset and delta to update handler
+    // This sets position = initial + delta (not accumulating each frame)
+    onMove(initialMovementOffset.current, projectedMovement)
+  }
+
+  const finishMovement = () => {
+    isMoving.current = false
+    activeHand.current = null
+    initialControllerPos.current = null
+    initialMovementOffset.current = null
+
+    console.log('Movement finished - grip released')
+  }
+
+  const projectMovementOntoPlane = (
+    worldDelta: THREE.Vector3,
+    anchorPose: XRPose,
+    objectRotation: number
+  ): THREE.Vector3 => {
+    // Extract anchor orientation
+    const anchorMatrix = new THREE.Matrix4().fromArray(anchorPose.transform.matrix)
+    const anchorQuat = new THREE.Quaternion()
+    anchorMatrix.decompose(new THREE.Vector3(), anchorQuat, new THREE.Vector3())
+
+    // Get plane normal
+    const planeNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(anchorQuat)
+
+    // Apply object rotation
+    const rotationQuat = new THREE.Quaternion().setFromAxisAngle(planeNormal, objectRotation)
+    const finalQuat = rotationQuat.multiply(anchorQuat)
+
+    // Get object's local X and Z axes in world space (movement along the plane)
+    const localX = new THREE.Vector3(1, 0, 0).applyQuaternion(finalQuat)
+    const localZ = new THREE.Vector3(0, 0, 1).applyQuaternion(finalQuat)
+
+    // Project delta onto local axes
+    const xComponent = worldDelta.dot(localX)
+    const zComponent = worldDelta.dot(localZ)
+
+    // Reconstruct movement in plane
+    return new THREE.Vector3()
+      .addScaledVector(localX, xComponent)
+      .addScaledVector(localZ, zComponent)
+  }
+
+  return null
 }
 
 /**

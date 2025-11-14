@@ -120,10 +120,10 @@ Visual description
 - The axes correspond to the x and y direction of the plane in which the object was created
     - This means the axes are parallel to the plane of creation (not global X and Y)
     - The rotation of the axis can be relative to the object’s orientation (X and Y needs to be along the object’s local X and Y)
-    - But the axes are not on the plane, they are vertically in the middle of the object’s height on that plane
+    - But the axes are not on the plane, they are vertically above the selected object (exactly same position logic as the slider in scale mode)
 - The axes should look like normal 3D axes rays (line + cone at the end)
 - The axis color should be red
-- The axis position must move along with the object while it is moved so that it always stays centred
+- The axis position must move along with the object while it is moved so that it always stays at the same place relative to the object
 - The axes must be big enough to be visible beyond the object’s X and Y dimension
 - The axes must scale with object size so that they are always visible
 
