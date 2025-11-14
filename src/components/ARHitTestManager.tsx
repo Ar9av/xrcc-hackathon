@@ -22,12 +22,12 @@ const ENABLE_PLANE_VISUALIZATION = false
  *
  * Feature 3 additions:
  * - Only shows cursor when in draw mode
- * - Supports placing different object types (table, bed, or sofa)
+ * - Supports placing different object types (tv, bed, or sofa)
  */
 
 interface ARHitTestManagerProps {
   isDrawMode: boolean
-  selectedObjectType: 'table' | 'bed' | 'sofa' | 'round-table' | null
+  selectedObjectType: 'tv' | 'bed' | 'sofa' | 'round-table' | null
   onExitDrawMode: () => void
   isPaletteVisible: boolean
 }
@@ -232,7 +232,7 @@ interface PlacementHandlerProps {
   hitResult: XRHitTestResult | null
   xrRefSpace: XRReferenceSpace | null
   isDrawMode: boolean
-  selectedObjectType: 'table' | 'bed' | 'sofa' | 'round-table' | null
+  selectedObjectType: 'tv' | 'bed' | 'sofa' | 'round-table' | null
   onExitDrawMode: () => void
   isPaletteVisible: boolean
 }
@@ -245,7 +245,7 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
   const [anchoredObjects, setAnchoredObjects] = useState<Array<{
     id: string
     anchor: XRAnchor
-    type: 'table' | 'bed' | 'sofa' | 'round-table'
+    type: 'tv' | 'bed' | 'sofa' | 'round-table'
     rotation: number  // Feature 4.2: Rotation angle in radians around plane normal
     scale: number  // Feature 4.2: Scale multiplier (0.75 to 1.25, default 1.0 = 100%)
     movementOffset: THREE.Vector3  // Feature 4.2: Movement offset from anchor position
@@ -410,7 +410,7 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
                 xrRefSpace={xrRefSpace}
                 type={type}
                 scale={scale}
-                baseScale={type === 'table' ? 0.9 : type === 'bed' ? 0.25 : 1.0}
+                baseScale={type === 'tv' ? 0.9 : type === 'bed' ? 0.25 : 1.0}
               />
             )}
           </React.Fragment>
@@ -458,10 +458,10 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
 }
 
 /**
- * SelectableObject - Renders GLB model (table, bed, or sofa) that tracks anchor position
+ * SelectableObject - Renders GLB model (tv, bed, or sofa) that tracks anchor position
  *
  * Updates object position from anchor pose each frame
- * Feature 3: Supports table, bed, and sofa object types loaded from GLB files
+ * Feature 3: Supports tv, bed, and sofa object types loaded from GLB files
  * Feature 4.1: Supports selection via onClick and visual feedback
  * Feature 4.2: Supports rotation around plane normal and scaling
  */
@@ -469,7 +469,7 @@ interface SelectableObjectProps {
   id: string
   anchor: XRAnchor
   xrRefSpace: XRReferenceSpace | null
-  type: 'table' | 'bed' | 'sofa' | 'round-table'
+  type: 'tv' | 'bed' | 'sofa' | 'round-table'
   rotation: number  // Feature 4.2: Rotation angle in radians
   scale: number  // Feature 4.2: Scale multiplier (0.75 to 1.25)
   movementOffset: THREE.Vector3  // Feature 4.2: Movement offset from anchor
@@ -535,10 +535,10 @@ const SelectableObject = React.forwardRef<THREE.Group, SelectableObjectProps>(
     return cloned
   }, [scene])
 
-  // Base scale factors: table 90% (10% reduction), bed 25% (75% reduction), sofa 100%, round-table 100%
+  // Base scale factors: tv 90% (10% reduction), bed 50% (50% reduction), sofa 100%, round-table 100%
   const baseScale = useMemo(() => {
-    if (type === 'table') return 0.9
-    if (type === 'bed') return 0.25
+    if (type === 'tv') return 0.02
+    if (type === 'bed') return 1.1
     return 1.0
   }, [type])
 
@@ -815,7 +815,7 @@ interface ScaleSliderProps {
   objectRef: React.RefObject<THREE.Group | null>  // To track object position after movement
   anchor: XRAnchor
   xrRefSpace: XRReferenceSpace | null
-  type: 'table' | 'bed' | 'sofa' | 'round-table'
+  type: 'tv' | 'bed' | 'sofa' | 'round-table'
   scale: number  // User scale multiplier (0.75 to 1.25)
   baseScale: number  // Asset-specific base scale factor
 }
@@ -1441,13 +1441,13 @@ function ControllerTooltips({ isPaletteVisible, isDrawMode, selectedObjectId, tr
 
   // Calculate background size based on text content (approximate)
   const getBackgroundSize = (text: string | null): [number, number] => {
-    if (!text) return [0.15, 0.08]
+    if (!text) return [0.1, 0.05]
     const lines = text.split('\n').length
     const maxLineLength = Math.max(...text.split('\n').map(line => line.length))
-    // Width: ~0.008 per character, min 0.15, max 0.25 (chip shape - wider)
-    // Height: ~0.02 per line, min 0.08, add padding
-    const width = Math.max(0.15, Math.min(0.25, maxLineLength * 0.008))
-    const height = Math.max(0.08, lines * 0.02 + 0.02)
+    // Width: ~0.005 per character, min 0.1, max 0.15 (chip shape - wider)
+    // Height: ~0.012 per line, min 0.05, add padding
+    const width = Math.max(0.1, Math.min(0.15, maxLineLength * 0.005))
+    const height = Math.max(0.05, lines * 0.012 + 0.012)
     return [width, height]
   }
 
@@ -1507,17 +1507,17 @@ function ControllerTooltips({ isPaletteVisible, isDrawMode, selectedObjectId, tr
         <group ref={leftTooltipRef} visible={!!leftController?.object}>
           {/* Chip-shaped background */}
           <mesh position={[0, 0, -0.01]}>
-            <shapeGeometry args={[createChipShape(leftBgSize[0], leftBgSize[1], 0.02)]} />
-            <meshBasicMaterial color="black" opacity={0.4} transparent />
+            <shapeGeometry args={[createChipShape(leftBgSize[0], leftBgSize[1], 0.01)]} />
+            <meshBasicMaterial color="#1a1a1a" opacity={1.0} />
           </mesh>
           <Text
             position={[0, 0, 0]}
-            fontSize={0.01}
+            fontSize={0.007}
             color="white"
             anchorX="center"
             anchorY="middle"
-            maxWidth={leftBgSize[0] - 0.02}
-            outlineWidth={0.0005}
+            maxWidth={leftBgSize[0] - 0.01}
+            outlineWidth={0.0003}
             outlineColor="black"
           >
             {leftText}
@@ -1528,17 +1528,17 @@ function ControllerTooltips({ isPaletteVisible, isDrawMode, selectedObjectId, tr
         <group ref={rightTooltipRef} visible={!!rightController?.object}>
           {/* Chip-shaped background */}
           <mesh position={[0, 0, -0.01]}>
-            <shapeGeometry args={[createChipShape(rightBgSize[0], rightBgSize[1], 0.02)]} />
-            <meshBasicMaterial color="black" opacity={0.4} transparent />
+            <shapeGeometry args={[createChipShape(rightBgSize[0], rightBgSize[1], 0.01)]} />
+            <meshBasicMaterial color="#1a1a1a" opacity={1.0} />
           </mesh>
           <Text
             position={[0, 0, 0]}
-            fontSize={0.01}
+            fontSize={0.007}
             color="white"
             anchorX="center"
             anchorY="middle"
-            maxWidth={rightBgSize[0] - 0.02}
-            outlineWidth={0.0005}
+            maxWidth={rightBgSize[0] - 0.01}
+            outlineWidth={0.0003}
             outlineColor="black"
           >
             {rightText}
@@ -1575,7 +1575,7 @@ function ModeController({ selectedObjectId, onToggleMode }: ModeControllerProps)
 }
 
 // Preload models for better performance
-useGLTF.preload('/asset/table.glb')
+useGLTF.preload('/asset/tv.glb')
 useGLTF.preload('/asset/bed.glb')
 useGLTF.preload('/asset/sofa.glb')
 useGLTF.preload('/asset/round-table.glb')

@@ -49,10 +49,10 @@ function PlayerRig() {
 
 
 interface SceneProps {
-  selectedObjectType: 'table' | 'bed' | 'sofa' | 'round-table' | null
+  selectedObjectType: 'tv' | 'bed' | 'sofa' | 'round-table' | null
   isDrawMode: boolean
   isPaletteVisible: boolean
-  onSelectTable: () => void
+  onSelectTv: () => void
   onSelectBed: () => void
   onSelectSofa: () => void
   onSelectRoundTable: () => void
@@ -80,7 +80,7 @@ function Scene({
   selectedObjectType,
   isDrawMode,
   isPaletteVisible,
-  onSelectTable,
+  onSelectTv,
   onSelectBed,
   onSelectSofa,
   onSelectRoundTable,
@@ -107,7 +107,7 @@ function Scene({
           <ObjectPalette
             isVisible={isPaletteVisible}
             onTogglePalette={onTogglePalette}
-            onSelectTable={onSelectTable}
+            onSelectTv={onSelectTv}
             onSelectBed={onSelectBed}
             onSelectSofa={onSelectSofa}
             onSelectRoundTable={onSelectRoundTable}
@@ -145,7 +145,7 @@ function App() {
   // Feature 3 state management - Object Palette and Draw Mode
   // Shared between AR and desktop modes
   const [isPaletteVisible, setIsPaletteVisible] = useState(false)
-  const [selectedObjectType, setSelectedObjectType] = useState<'table' | 'bed' | 'sofa' | 'round-table' | null>(null)
+  const [selectedObjectType, setSelectedObjectType] = useState<'tv' | 'bed' | 'sofa' | 'round-table' | null>(null)
   const [isDrawMode, setIsDrawMode] = useState(false)
 
   // Feature 3 handlers
@@ -164,8 +164,8 @@ function App() {
     })
   }
 
-  const handleSelectTable = () => {
-    setSelectedObjectType('table')
+  const handleSelectTv = () => {
+    setSelectedObjectType('tv')
     setIsDrawMode(true)
     setIsPaletteVisible(false)
   }
@@ -247,7 +247,7 @@ function App() {
       {/* Desktop furniture menu - only show when not in AR mode and not on landing page */}
       {!isARMode && !showLandingPage && (
         <DesktopFurnitureMenu
-          onSelectTable={handleSelectTable}
+          onSelectTv={handleSelectTv}
           onSelectBed={handleSelectBed}
           onSelectSofa={handleSelectSofa}
           onSelectRoundTable={handleSelectRoundTable}
@@ -263,7 +263,7 @@ function App() {
             selectedObjectType={selectedObjectType}
             isDrawMode={isDrawMode}
             isPaletteVisible={isPaletteVisible}
-            onSelectTable={handleSelectTable}
+            onSelectTv={handleSelectTv}
             onSelectBed={handleSelectBed}
             onSelectSofa={handleSelectSofa}
             onSelectRoundTable={handleSelectRoundTable}
