@@ -4,16 +4,15 @@
 
 This document provides comprehensive research for implementing **Move Mode** in Feature 4.2. Move mode allows users to reposition selected AR objects by holding the grip button and dragging their hand along the object's local X and Y axes. The movement is constrained to the plane on which the object was originally placed.
 
-**Key Challenge**: Tracking real-time controller position changes, projecting movement onto the object's local plane, and updating the AR anchor position to maintain proper tracking as the system's understanding of the world evolves.
+**Key Challenge**: Tracking real-time controller position changes, projecting movement onto the object's local plane, and applying visual offset while maintaining proper AR tracking.
 
 This research covers:
 1. Requirements analysis and clarifications
 2. Axes visualization with ArrowHelper
 3. Controller position tracking and movement calculation
 4. Plane-constrained movement mathematics
-5. Anchor position updates (delete and recreate pattern)
-6. Grip button input handling
-7. Integration with existing transform modes
+5. Grip button input handling
+6. Integration with existing transform modes
 
 ## Requirements Summary
 
@@ -69,11 +68,11 @@ Position = anchor_position + (object_height + 0.3m) * plane_normal
 - User moves hand 1 meter → Object moves 2 meters
 - Makes movement more responsive and less physically tiring
 
-**Anchor Point Updates**:
-- **CRITICAL**: Must update the actual AR anchor position
-- Anchor position determines where rotation and scale operations occur
-- All other modes (rotate, scale) depend on anchor position
-- Moving the object must move the anchor so rotation pivot moves correctly
+**Position Storage**:
+- Movement offset stored as `movementOffset` in object state
+- Applied visually to object position in real-time
+- Visualization components (axes, slider) use object's world position
+- Anchor remains at original placement location
 
 ### Mode Management
 
@@ -86,7 +85,7 @@ Position = anchor_position + (object_height + 0.3m) * plane_normal
 **State Persistence**:
 - Object position persists after exiting move mode
 - Position persists when deselecting and reselecting object
-- Each object has independent position (determined by anchor)
+- Each object has independent position (stored as movementOffset)
 
 ## User Workflow
 
@@ -103,7 +102,7 @@ Position = anchor_position + (object_height + 0.3m) * plane_normal
 5. **Stop Moving**: Release grip button → Object stops, remains in move mode
 6. **Continue Adjusting**: Can press grip again to make further adjustments
 7. **Switch Modes**: Press 'A' → Cycle to rotate mode (axes disappear)
-8. **Verify**: Return to rotate mode → Object rotates around new position
+8. **Verify**: Return to rotate mode → Object rotates around its visual position
 
 ## Component Architecture
 
@@ -126,9 +125,9 @@ SelectableObject (parent group with matrixAutoUpdate=false)
 - `MoveController`: Handles grip button hold and controller position tracking
 
 **Modified Components**:
-- `SelectableObject`: Update anchor position as object moves
+- `SelectableObject`: Apply movementOffset to visual position
 - `ModificationVisuals`: Add MoveAxes rendering for move mode
-- `PlacementHandler`: Handle anchor recreation when object moved
+- `PlacementHandler`: Store and manage movementOffset in object state
 
 ## State Management
 
@@ -140,8 +139,9 @@ interface AnchoredObjectData {
   id: string
   anchor: XRAnchor
   type: 'table' | 'bed' | 'sofa' | 'round-table'
-  rotation: number  // Existing from rotate mode
-  scale: number     // Existing from scale mode
+  rotation: number       // Existing from rotate mode
+  scale: number          // Existing from scale mode
+  movementOffset: THREE.Vector3  // NEW for move mode
 }
 
 const [transformMode, setTransformMode] = useState<TransformMode>('rotate')
@@ -151,40 +151,27 @@ const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null)
 ### Additional State for Move Mode
 
 ```tsx
-// No new persistent state needed!
-// Movement is handled by updating the anchor position directly
-// The anchor itself stores the position
+// Persistent state: movementOffset in AnchoredObjectData (see above)
+// Initialized to (0, 0, 0) when object is placed
 
 // Temporary state during drag (in MoveController component)
 interface MovementState {
   isMoving: boolean
   initialControllerPos: THREE.Vector3 | null
-  initialAnchorPos: THREE.Vector3 | null
   activeHand: 'left' | 'right' | null
 }
 ```
 
-**Key Insight**: Unlike rotation and scale, movement doesn't need persistent state per object because the position is inherently stored in the **anchor's pose**. The anchor is the source of truth for position.
+**Key Insight**: Movement is stored as an offset from the original anchor position. The anchor stays at the original placement location, and `movementOffset` is applied visually to the object.
 
 ### State Update Pattern
 
 ```tsx
 // In PlacementHandler
-const handleMove = async (objectId: string, newPosition: THREE.Vector3, planeNormal: THREE.Vector3) => {
-  // Find the object
-  const obj = anchoredObjects.find(o => o.id === objectId)
-  if (!obj) return
-
-  // Delete old anchor (cannot move anchors, must recreate)
-  obj.anchor.delete()
-
-  // Create new anchor at new position
-  const newAnchor = await createAnchorAtPosition(newPosition, planeNormal)
-
-  // Update state with new anchor (position is implicit in anchor)
+const handleMove = (objectId: string, deltaMovement: THREE.Vector3) => {
   setAnchoredObjects(prev => prev.map(o =>
     o.id === objectId
-      ? { ...o, anchor: newAnchor }
+      ? { ...o, movementOffset: o.movementOffset.clone().add(deltaMovement) }
       : o
   ))
 }
@@ -275,7 +262,7 @@ function MoveAxes({ objectRef, anchor, xrRefSpace }: MoveAxesProps) {
 
 **Requirement**: Position axes 30cm above object, perpendicular to plane (same as scale slider).
 
-**Implementation Pattern** (from scale mode):
+**Implementation Pattern**:
 ```tsx
 // Calculate actual object height from GLB model (cached)
 const unscaledHeight = useMemo(() => {
@@ -286,20 +273,24 @@ const unscaledHeight = useMemo(() => {
 }, [objectRef])
 
 useFrame((state) => {
-  // Extract anchor position and plane normal
-  const anchorMatrix = new THREE.Matrix4().fromArray(anchorPose.transform.matrix)
-  const anchorPos = new THREE.Vector3()
-  const anchorQuat = new THREE.Quaternion()
-  anchorMatrix.decompose(anchorPos, anchorQuat, new THREE.Vector3())
+  if (!objectRef.current) return
 
+  // Get object's actual world position (includes movementOffset)
+  const objectWorldPos = new THREE.Vector3()
+  objectRef.current.getWorldPosition(objectWorldPos)
+
+  // Extract plane normal from anchor
+  const anchorMatrix = new THREE.Matrix4().fromArray(anchorPose.transform.matrix)
+  const anchorQuat = new THREE.Quaternion()
+  anchorMatrix.decompose(new THREE.Vector3(), anchorQuat, new THREE.Vector3())
   const planeNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(anchorQuat)
 
   // Calculate scaled height (accounts for user scale from scale mode)
   const scaledHeight = unscaledHeight * baseScale * scale
 
-  // Position axes: anchor + (scaledHeight + clearance) * planeNormal
+  // Position axes: objectWorldPos + (scaledHeight + clearance) * planeNormal
   const clearance = 0.3  // 30cm above object
-  const axesPos = anchorPos.clone()
+  const axesPos = objectWorldPos.clone()
     .add(planeNormal.clone().multiplyScalar(scaledHeight + clearance))
 
   axesGroupRef.current.position.copy(axesPos)
@@ -307,7 +298,9 @@ useFrame((state) => {
 ```
 
 **Why This Works**:
-- Plane normal points perpendicular to surface (from anchor's Y-axis)
+- `objectRef.current.getWorldPosition()` automatically includes movementOffset
+- No need to manually track or pass movementOffset to visualization components
+- Plane normal still comes from anchor (defines surface orientation)
 - For floor: normal ≈ (0, 1, 0) → axes move up
 - For wall: normal ≈ (1, 0, 0) or similar → axes move away from wall
 - Clearance ensures axes don't intersect with object as it scales
@@ -586,152 +579,9 @@ Projection formula:
 - Summing X and Y components reconstructs total movement in plane
 - Ignores any Z component (perpendicular to plane)
 
-### 7. Anchor Position Updates
+### 7. Real-Time Visual Updates with Movement Offset
 
-**CRITICAL FINDING**: WebXR anchors **cannot be moved**. They are automatically updated by the tracking system. To "move" an object, you must:
-1. Delete the old anchor
-2. Create a new anchor at the new position
-
-**WebXR Anchor API (from MDN)**:
-```tsx
-// Creating an anchor from XRFrame
-const newAnchor = await frame.createAnchor(
-  pose,          // XRRigidTransform with new position/orientation
-  referenceSpace // XRReferenceSpace to interpret pose in
-)
-
-// Deleting an anchor
-anchor.delete()
-
-// Checking if anchor is still tracked
-if (frame.trackedAnchors?.has(anchor)) {
-  // Anchor is valid
-}
-```
-
-**Update Pattern**:
-```tsx
-async function updateObjectPosition(
-  objectId: string,
-  deltaMovement: THREE.Vector3,
-  anchoredObjects: AnchoredObjectData[],
-  session: XRSession,
-  xrRefSpace: XRReferenceSpace
-) {
-  const obj = anchoredObjects.find(o => o.id === objectId)
-  if (!obj) return
-
-  // Get current anchor pose
-  const frame = session.requestAnimationFrame(() => {}) // Get current frame
-  const anchorPose = frame.getPose(obj.anchor.anchorSpace, xrRefSpace)
-  if (!anchorPose) return
-
-  // Calculate new position
-  const currentPos = new THREE.Vector3().setFromMatrixPosition(
-    new THREE.Matrix4().fromArray(anchorPose.transform.matrix)
-  )
-  const newPos = currentPos.clone().add(deltaMovement)
-
-  // Extract current orientation (preserve rotation)
-  const currentMatrix = new THREE.Matrix4().fromArray(anchorPose.transform.matrix)
-  const currentQuat = new THREE.Quaternion()
-  currentMatrix.decompose(new THREE.Vector3(), currentQuat, new THREE.Vector3())
-
-  // Create new pose (new position + preserved orientation)
-  const newPose = new XRRigidTransform(
-    { x: newPos.x, y: newPos.y, z: newPos.z },
-    { x: currentQuat.x, y: currentQuat.y, z: currentQuat.z, w: currentQuat.w }
-  )
-
-  // Delete old anchor
-  obj.anchor.delete()
-
-  // Create new anchor at new position
-  const newAnchor = await frame.createAnchor(newPose, xrRefSpace)
-
-  // Update state
-  setAnchoredObjects(prev => prev.map(o =>
-    o.id === objectId
-      ? { ...o, anchor: newAnchor }
-      : o
-  ))
-}
-```
-
-**Challenges with Async Anchor Creation**:
-- `createAnchor()` returns a Promise
-- Cannot call in `useFrame` (async not allowed)
-- Movement should be real-time, but anchor update is async
-
-**Solution Options**:
-
-**Option A: Accumulate Movement, Update Periodically**
-```tsx
-// Accumulate movement in ref
-const accumulatedMovement = useRef(new THREE.Vector3())
-
-useFrame(() => {
-  if (isMoving) {
-    // Calculate delta
-    accumulatedMovement.current.add(projectedDelta)
-  }
-})
-
-// Separate effect watches for grip release
-useEffect(() => {
-  if (!isMoving && accumulatedMovement.current.length() > 0.01) {
-    // Apply accumulated movement to anchor
-    updateAnchorPosition(accumulatedMovement.current)
-    accumulatedMovement.current.set(0, 0, 0)
-  }
-}, [isMoving])
-```
-
-**Option B: Update Position in useFrame, Recreate Anchor on Release**
-```tsx
-// Store offset from anchor in ref (temporary during drag)
-const offsetFromAnchor = useRef(new THREE.Vector3())
-
-useFrame(() => {
-  if (isMoving) {
-    // Update offset (visual position changes immediately)
-    offsetFromAnchor.current.add(projectedDelta)
-
-    // Apply offset to visual position (not anchor yet)
-    objectRef.current.position.copy(anchorPos.clone().add(offsetFromAnchor.current))
-  }
-})
-
-// On grip release, commit offset to new anchor
-useEffect(() => {
-  if (!isMoving && offsetFromAnchor.current.length() > 0) {
-    // Create new anchor at offset position
-    const newPos = anchorPos.clone().add(offsetFromAnchor.current)
-    recreateAnchorAtPosition(newPos)
-    offsetFromAnchor.current.set(0, 0, 0)
-  }
-}, [isMoving])
-```
-
-**Recommended: Option B** - Visual feedback is immediate, anchor update on release is acceptable.
-
-**XRRigidTransform Creation**:
-```tsx
-// From position and quaternion
-const transform = new XRRigidTransform(
-  { x: pos.x, y: pos.y, z: pos.z },           // DOMPointInit position
-  { x: quat.x, y: quat.y, z: quat.z, w: quat.w } // DOMPointInit orientation
-)
-
-// From matrix (if available)
-const transform = new XRRigidTransform(matrix.toArray())
-```
-
-### 8. Real-Time Visual Updates During Drag
-
-**Challenge**: Anchor updates are async, but user expects immediate visual feedback.
-
-**Solution**: Apply movement to object's visual position immediately, commit to anchor on release.
+**Approach**: Store movement as an offset from the anchor position, apply it visually in real-time.
 
 **Implementation Pattern**:
 ```tsx
@@ -739,8 +589,7 @@ function SelectableObject({
   anchor,
   rotation,
   scale,
-  isMoving,  // NEW: passed from parent
-  movementOffset  // NEW: temporary offset during drag
+  movementOffset  // NEW: persistent offset from anchor
 }: SelectableObjectProps) {
   const groupRef = useRef<THREE.Group>(null)
 
@@ -757,10 +606,8 @@ function SelectableObject({
     const anchorQuat = new THREE.Quaternion()
     anchorMatrix.decompose(anchorPos, anchorQuat, new THREE.Vector3())
 
-    // Apply temporary movement offset (only when moving)
-    const finalPos = isMoving
-      ? anchorPos.clone().add(movementOffset)
-      : anchorPos
+    // Apply movement offset
+    const finalPos = anchorPos.clone().add(movementOffset)
 
     // Apply rotation
     const planeNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(anchorQuat)
@@ -781,7 +628,12 @@ function SelectableObject({
 }
 ```
 
-**Key Pattern**: Temporary offset applied during drag, committed to anchor on release.
+**Key Benefits**:
+- No async anchor updates needed
+- Movement is immediate and smooth
+- Simple state management (just a Vector3 offset)
+- Anchor stays at original placement location (AR tracking remains stable)
+- Rotation and scale work correctly around visual position
 
 ## Performance Considerations
 
@@ -797,16 +649,13 @@ function SelectableObject({
 
 **Impact**: Negligible (< 0.1ms per frame)
 
-### Anchor Recreation
+### State Updates
 
-**Frequency**: Once per drag operation (on grip release)
+**Frequency**: Once per frame during drag
 
-**Cost**: Async operation, may take 10-50ms
+**Cost**: Vector addition in state update (trivial)
 
-**Mitigation**:
-- Only recreate on grip release (not every frame)
-- User won't notice delay (not in critical path)
-- Visual updates happen immediately (separate from anchor update)
+**Impact**: Negligible - just updating a Vector3 reference
 
 ### Axes Visualization
 
@@ -914,14 +763,16 @@ const scaledHeight = unscaledHeight * baseScale * scale
 - Movement follows object rotation
 - No movement perpendicular to plane
 
-### Phase 5: Visual Position Updates
+### Phase 5: Visual Position Updates and State Management
 
 **Tasks**:
-1. Pass movement offset to `SelectableObject`
-2. Apply offset to visual position in `useFrame`
-3. Test real-time visual feedback
-4. Ensure smooth, responsive movement
-5. Verify movement stops when grip released
+1. Add `movementOffset` to `AnchoredObjectData` interface
+2. Pass `movementOffset` to `SelectableObject`
+3. Apply offset to visual position in `useFrame`
+4. Update `handleMove` to add delta to `movementOffset` state
+5. Test real-time visual feedback
+6. Ensure smooth, responsive movement
+7. Verify movement persists after grip released
 
 **Files**: `src/components/ARHitTestManager.tsx`
 
@@ -931,27 +782,10 @@ const scaledHeight = unscaledHeight * baseScale * scale
 - Movement stops when grip released
 - Object position updates in real-time
 - 2x sensitivity feels natural
+- Position persists after releasing grip
+- Position persists when deselecting/reselecting object
 
-### Phase 6: Anchor Position Updates
-
-**Tasks**:
-1. Implement anchor deletion on grip release
-2. Create new anchor at new position
-3. Preserve object rotation and scale in new anchor
-4. Update `anchoredObjects` state with new anchor
-5. Test: Object stays in new position after release
-
-**Files**: `src/components/ARHitTestManager.tsx`
-
-**Success Criteria**:
-- Old anchor deleted when grip released
-- New anchor created at moved position
-- Object rotation preserved
-- Object scale preserved
-- Object tracks new position correctly
-- No errors in anchor creation
-
-### Phase 7: Integration Testing
+### Phase 6: Integration Testing
 
 **Testing Checklist**:
 - [ ] Axes appear in move mode for all object types
@@ -967,8 +801,8 @@ const scaledHeight = unscaledHeight * baseScale * scale
 - [ ] Movement follows object rotation
 - [ ] Sensitivity (2x) feels correct
 - [ ] Object stays in new position after release
-- [ ] Rotation works around new position (anchor updated)
-- [ ] Scale works from new position (anchor updated)
+- [ ] Rotation works around visual position (movementOffset applied)
+- [ ] Scale works from visual position (movementOffset applied)
 - [ ] Mode toggle (A button) works smoothly
 - [ ] Works on horizontal planes (floor/table)
 - [ ] Works on vertical planes (walls) if available
@@ -987,9 +821,9 @@ const scaledHeight = unscaledHeight * baseScale * scale
 ### Rotate Mode Integration
 
 **Dependencies**:
-- Rotation must work around new anchor position after moving
+- Rotation must work around visual position (anchor + movementOffset)
 - Moving an object should not reset its rotation
-- Rotation state is preserved when recreating anchor
+- Rotation state is independent of movementOffset
 
 **No Conflicts**:
 - Rotate uses thumbstick, move uses grip (different inputs)
@@ -1001,18 +835,20 @@ const scaledHeight = unscaledHeight * baseScale * scale
 **Dependencies**:
 - Axes position must account for current scale (object height)
 - Moving scaled objects should work correctly
-- Scale state is preserved when recreating anchor
+- Scale state is independent of movementOffset
+- Scale slider uses `objectRef.current.getWorldPosition()` to track moved objects
 
 **Shared Pattern**:
 - Both use same positioning logic (height + clearance above object)
 - Both positioned perpendicular to plane
+- Both use object world position (automatic movementOffset inclusion)
 
 ### Selection and Deletion
 
 **Works Naturally**:
 - Move only active when object selected
 - Deleting moving object cancels movement
-- Deselecting preserves position (stored in anchor)
+- Deselecting preserves position (stored in movementOffset)
 
 ## Code Snippets
 
@@ -1078,7 +914,7 @@ function MoveAxes({ objectRef, anchor, xrRefSpace, rotation, scale, baseScale }:
 
   // Update axes position and orientation each frame
   useFrame((state) => {
-    if (!session || !xrRefSpace || !axesGroupRef.current) return
+    if (!session || !xrRefSpace || !axesGroupRef.current || !objectRef.current) return
 
     const frame = state.gl.xr.getFrame()
     if (!frame?.trackedAnchors?.has(anchor)) return
@@ -1086,11 +922,14 @@ function MoveAxes({ objectRef, anchor, xrRefSpace, rotation, scale, baseScale }:
     const anchorPose = frame.getPose(anchor.anchorSpace, xrRefSpace)
     if (!anchorPose) return
 
-    // Extract anchor position and orientation
+    // Get object's actual world position (includes movementOffset)
+    const objectWorldPos = new THREE.Vector3()
+    objectRef.current.getWorldPosition(objectWorldPos)
+
+    // Extract anchor orientation for plane normal
     const anchorMatrix = new THREE.Matrix4().fromArray(anchorPose.transform.matrix)
-    const anchorPos = new THREE.Vector3()
     const anchorQuat = new THREE.Quaternion()
-    anchorMatrix.decompose(anchorPos, anchorQuat, new THREE.Vector3())
+    anchorMatrix.decompose(new THREE.Vector3(), anchorQuat, new THREE.Vector3())
 
     // Plane normal (perpendicular to plane)
     const planeNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(anchorQuat)
@@ -1098,9 +937,9 @@ function MoveAxes({ objectRef, anchor, xrRefSpace, rotation, scale, baseScale }:
     // Calculate scaled height
     const scaledHeight = unscaledHeight * baseScale * scale
 
-    // Position axes 30cm above object top
+    // Position axes 30cm above object top (using object's world position)
     const clearance = 0.3
-    const axesPos = anchorPos.clone()
+    const axesPos = objectWorldPos.clone()
       .add(planeNormal.clone().multiplyScalar(scaledHeight + clearance))
 
     axesGroupRef.current.position.copy(axesPos)
@@ -1296,56 +1135,40 @@ function MoveController({
 }
 ```
 
-### Anchor Update Handler
+### Movement State Handler
 
 ```tsx
 // In PlacementHandler component
 
-const handleMoveObject = async (objectId: string, deltaMovement: THREE.Vector3) => {
-  const obj = anchoredObjects.find(o => o.id === objectId)
-  if (!obj || !session || !xrRefSpace) return
-
-  try {
-    // Get current anchor pose
-    const frame = /* need to get frame - see note below */
-    const anchorPose = frame.getPose(obj.anchor.anchorSpace, xrRefSpace)
-    if (!anchorPose) return
-
-    // Calculate new position
-    const currentMatrix = new THREE.Matrix4().fromArray(anchorPose.transform.matrix)
-    const currentPos = new THREE.Vector3()
-    const currentQuat = new THREE.Quaternion()
-    currentMatrix.decompose(currentPos, currentQuat, new THREE.Vector3())
-
-    const newPos = currentPos.clone().add(deltaMovement)
-
-    // Create new pose (preserve orientation)
-    const newPose = new XRRigidTransform(
-      { x: newPos.x, y: newPos.y, z: newPos.z },
-      { x: currentQuat.x, y: currentQuat.y, z: currentQuat.z, w: currentQuat.w }
-    )
-
-    // Delete old anchor
-    obj.anchor.delete()
-
-    // Create new anchor at new position
-    const newAnchor = await frame.createAnchor(newPose, xrRefSpace)
-
-    // Update state with new anchor
-    setAnchoredObjects(prev => prev.map(o =>
-      o.id === objectId
-        ? { ...o, anchor: newAnchor }
-        : o
-    ))
-
-    console.log('Anchor updated to new position', newPos)
-  } catch (error) {
-    console.error('Failed to update anchor position:', error)
-  }
+const handleMoveObject = (objectId: string, deltaMovement: THREE.Vector3) => {
+  setAnchoredObjects(prev => prev.map(o =>
+    o.id === objectId
+      ? { ...o, movementOffset: o.movementOffset.clone().add(deltaMovement) }
+      : o
+  ))
 }
 
-// Note: Getting frame outside useFrame is tricky
-// May need to store frame in ref or use different approach
+// Usage in SelectableObject
+function SelectableObject({
+  anchor,
+  rotation,
+  scale,
+  movementOffset,  // Passed from parent
+  ...
+}: SelectableObjectProps) {
+  useFrame((state) => {
+    // ... get anchorPos and anchorQuat ...
+
+    // Apply movement offset to base position
+    const finalPos = anchorPos.clone().add(movementOffset)
+
+    // Apply rotation around moved position
+    const rotationQuat = new THREE.Quaternion().setFromAxisAngle(planeNormal, rotation)
+    const finalQuat = rotationQuat.multiply(anchorQuat)
+
+    // ... compose matrix with finalPos and finalQuat ...
+  })
+}
 ```
 
 ## Key Learnings Applied
@@ -1366,10 +1189,9 @@ const handleMoveObject = async (objectId: string, deltaMovement: THREE.Vector3) 
 
 ### From WebXR Documentation
 
-1. **Anchor Limitations**: Cannot move anchors, must delete and recreate
-2. **Controller Position**: Use `getWorldPosition()`, not `.position`
-3. **XRRigidTransform**: Create from position + quaternion for anchor poses
-4. **Frame Access**: `state.gl.xr.getFrame()` in `useFrame`
+1. **Controller Position**: Use `getWorldPosition()`, not `.position`
+2. **Frame Access**: `state.gl.xr.getFrame()` in `useFrame`
+3. **Object World Position**: Use `objectRef.current.getWorldPosition()` for visualization positioning
 
 ### From Three.js Documentation
 
@@ -1390,17 +1212,7 @@ const handleMoveObject = async (objectId: string, deltaMovement: THREE.Vector3) 
 - Axes are children of axes group, so they inherit rotation
 - Update arrow directions to point along rotated local X and Y
 
-### Challenge 2: Real-Time Movement with Async Anchor Updates
-
-**Problem**: Anchor creation is async (Promise), but movement should be real-time.
-
-**Solution**:
-- Visual updates happen immediately (offset applied in `useFrame`)
-- Anchor update happens on grip release (async operation acceptable)
-- Accumulate movement in ref, commit to anchor when drag ends
-- Two-phase approach: temporary visual + permanent anchor
-
-### Challenge 3: Projecting 3D Movement onto 2D Plane
+### Challenge 2: Projecting 3D Movement onto 2D Plane
 
 **Problem**: Controller moves in 3D space, object should only move in its placement plane.
 
@@ -1410,26 +1222,25 @@ const handleMoveObject = async (objectId: string, deltaMovement: THREE.Vector3) 
 - Reconstruct movement as combination of X and Y components
 - Ignores any perpendicular (Z) component automatically
 
-### Challenge 4: Maintaining Rotation Pivot After Move
+### Challenge 3: Visualizations Following Moved Object
 
-**Problem**: User requirement says "moving should also move the anchor point so that rotation works properly".
+**Problem**: Axes and scale slider need to stay positioned above object after it's moved.
 
 **Solution**:
-- Recreate anchor at new position with same orientation
-- Rotation state (angle) is preserved in object data
-- Rotation is applied relative to anchor, so new anchor = new pivot
-- Scale and rotation modes automatically work from new position
+- Use `objectRef.current.getWorldPosition()` instead of calculating from anchor
+- This automatically includes the `movementOffset` in the position
+- No need to manually track or pass offset to visualization components
+- Simpler and more maintainable
 
-### Challenge 5: Accessing XRFrame Outside useFrame
+### Challenge 4: Maintaining Rotation Pivot After Move
 
-**Problem**: Anchor creation needs XRFrame, but is called from effect/callback (not `useFrame`).
+**Problem**: Rotation should work around the object's visual position, not the original anchor.
 
-**Solution Options**:
-1. Store frame in ref during `useFrame`, access in callback (stale data risk)
-2. Use `session.requestAnimationFrame()` to get next frame (adds delay)
-3. Accumulate movement, update anchor in `useFrame` when grip released
-
-**Recommended**: Option 3 - Check grip state in `useFrame`, trigger anchor update there.
+**Solution**:
+- Apply `movementOffset` before applying rotation in `SelectableObject`
+- Rotation quaternion is applied relative to the moved position
+- `finalPos = anchorPos + movementOffset` → then apply rotation around `finalPos`
+- Works naturally with the existing rotation logic
 
 ## API Reference
 
@@ -1462,23 +1273,12 @@ const center = bbox.getCenter(new THREE.Vector3())
 **XRAnchor**:
 ```tsx
 anchor.anchorSpace: XRSpace
-anchor.delete(): void
 ```
 
 **XRFrame**:
 ```tsx
-frame.createAnchor(pose: XRRigidTransform, space: XRReferenceSpace): Promise<XRAnchor>
 frame.getPose(space: XRSpace, baseSpace: XRReferenceSpace): XRPose | null
 frame.trackedAnchors: XRAnchorSet
-```
-
-**XRRigidTransform**:
-```tsx
-new XRRigidTransform(
-  position?: DOMPointInit,
-  orientation?: DOMPointInit
-)
-// DOMPointInit: { x, y, z, w? }
 ```
 
 ### @react-three/xr APIs
@@ -1558,22 +1358,20 @@ Example: d=1m, s=2.0 → object moves 2m
    - Accumulated movement ref
    - Only active in move mode with selected object
 
-3. **Anchor Update Handler** (Lines TBD in ARHitTestManager.tsx):
-   - Delete old anchor on grip release
-   - Create new anchor at new position
-   - Preserve object rotation and scale
-   - Update `anchoredObjects` state
-   - Error handling for anchor creation
+3. **State Management** (Lines TBD in ARHitTestManager.tsx):
+   - Add `movementOffset: THREE.Vector3` to `AnchoredObjectData` interface
+   - Initialize to `new THREE.Vector3(0, 0, 0)` when object placed
+   - Update via `handleMoveObject` callback
 
 4. **SelectableObject Modifications** (Lines TBD in ARHitTestManager.tsx):
-   - Accept movement offset prop (temporary during drag)
-   - Apply offset to visual position in `useFrame`
-   - Commit to anchor when movement ends
+   - Accept `movementOffset` prop
+   - Apply offset to base position in `useFrame`: `finalPos = anchorPos + movementOffset`
+   - Rotation and scale work around moved position
 
 5. **PlacementHandler Modifications** (Lines TBD in ARHitTestManager.tsx):
-   - Add `handleMoveObject` callback
+   - Add `handleMoveObject` callback to update `movementOffset`
+   - Pass `movementOffset` to SelectableObject
    - Pass callback to MoveController
-   - Manage anchor recreation logic
 
 ### Files Modified
 
@@ -1589,9 +1387,7 @@ After completing research:
 3. Test axes appearance and positioning
 4. Implement Phase 2-3 (Grip detection and position tracking)
 5. Test grip button and tracking
-6. Implement Phase 4-5 (Movement projection and visual updates)
-7. Test real-time movement
-8. Implement Phase 6 (Anchor updates)
-9. Test anchor recreation and position persistence
-10. Phase 7 integration testing on Quest 2
-11. Refine and polish based on testing feedback
+6. Implement Phase 4-5 (Movement projection, visual updates, and state management)
+7. Test real-time movement and position persistence
+8. Phase 6 integration testing on Quest 2
+9. Refine and polish based on testing feedback
