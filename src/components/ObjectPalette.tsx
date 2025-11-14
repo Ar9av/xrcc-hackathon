@@ -38,8 +38,8 @@ const furnitureData: FurnitureItem[] = [
   // Table category
   { id: 'round-table', name: 'Round Table', category: 'table', image: '/asset/images/round-table.png', hasModel: true, modelPath: '/asset/round-table.glb' },
   { id: 'table', name: 'Dining Table', category: 'table', image: '/asset/images/table.png', hasModel: true, modelPath: '/asset/s/table.glb' },
-  { id: 'coffee-table', name: 'Coffee Table', category: 'table', image: '/asset/images/table.png', hasModel: false },
-  { id: 'desk', name: 'Desk', category: 'table', image: '/asset/images/table.png', hasModel: false },
+  { id: 'coffee-table', name: 'Coffee Table', category: 'table', image: '/asset/images/coffee-table.png', hasModel: false },
+  { id: 'desk', name: 'Desk', category: 'table', image: '/asset/images/desk.png', hasModel: false },
   { id: 'side-table', name: 'Side Table', category: 'table', image: '/asset/images/table.png', hasModel: false },
   
   // Wardrobe category
@@ -253,12 +253,30 @@ function PalettePanel({ visible, onSelectTv, onSelectBed, onSelectSofa, onSelect
   const scrollSpeed = 0.02 // Scroll speed per frame
   
   // Grid constants for scrolling calculation
-  const cols = 3
+  const cols = 4
   const itemSize = 0.16
-  const spacing = 0.22
   const labelHeight = 0.04
   const labelGap = 0.02
-  const padding = 0.1
+  const padding = 0.12 // Equal padding from all edges
+  
+  // Calculate spacing to evenly distribute items (using panel dimensions defined later)
+  // These will be recalculated in the render section with actual panel dimensions
+  const calculateSpacing = (panelHeight: number, contentWidth: number) => {
+    const contentHeight = panelHeight - padding * 2
+    const contentWidthInner = contentWidth - padding * 2
+    
+    // Calculate horizontal spacing for equal gaps
+    const totalItemsWidth = itemSize * cols
+    const availableWidth = contentWidthInner
+    const horizontalGap = (availableWidth - totalItemsWidth) / (cols + 1)
+    const spacingX = itemSize + horizontalGap
+    
+    // Calculate vertical spacing for equal gaps
+    const itemTotalHeight = itemSize + labelHeight + labelGap
+    const spacingY = itemTotalHeight + (horizontalGap * 0.8) // Use similar gap for vertical, slightly smaller
+    
+    return { spacingX, spacingY, horizontalGap, contentHeight, contentWidthInner }
+  }
   
   useFrame(() => {
     if (!visible || !rightController?.gamepad) return
@@ -276,10 +294,11 @@ function PalettePanel({ visible, onSelectTv, onSelectBed, onSelectSofa, onSelect
     if (Math.abs(thumbstickY) > 0.1) { // Dead zone
       // Calculate max scroll based on current filtered items
       const panelHeight = 1.0
-      const contentHeight = panelHeight - padding * 2
-      const maxRows = Math.floor(contentHeight / spacing)
+      const contentWidth = 1.4 - 0.35
+      const { spacingY, contentHeight } = calculateSpacing(panelHeight, contentWidth)
+      const maxRows = Math.floor(contentHeight / spacingY)
       const totalRows = Math.ceil(filteredFurniture.length / cols)
-      const maxScroll = Math.max(0, (totalRows - maxRows) * spacing)
+      const maxScroll = Math.max(0, (totalRows - maxRows) * spacingY)
       
       // Update scroll offset (invert so up scrolls up)
       const newOffset = scrollOffset - thumbstickY * scrollSpeed
@@ -458,22 +477,23 @@ function PalettePanel({ visible, onSelectTv, onSelectBed, onSelectSofa, onSelect
 
           {/* Furniture items grid - with scrolling */}
           {(() => {
-            // Use panel dimensions from the component scope
+            // Calculate spacing with actual panel dimensions
             const panelHeight = 1.0
             const contentWidth = 1.4 - 0.35 // panelWidth - navWidth
-            const contentHeight = panelHeight - padding * 2
-            const contentWidthInner = contentWidth - padding * 2
+            const { spacingX, spacingY, horizontalGap, contentHeight, contentWidthInner } = calculateSpacing(panelHeight, contentWidth)
             
             return filteredFurniture.map((item, index) => {
               const row = Math.floor(index / cols)
               const col = index % cols
               
-              // Calculate positions with proper spacing and scroll offset
-              const startX = -(cols - 1) * spacing / 2
-              const startY = (contentHeight / 2) - padding - (itemSize / 2)
+              // Calculate positions with equal spacing from edges
+              // Start from left edge with padding, then add gaps between items
+              const startX = -contentWidthInner / 2 + horizontalGap + itemSize / 2
+              const startY = contentHeight / 2 - padding - itemSize / 2
               
-              const x = startX + col * spacing
-              const y = startY - row * spacing + scrollOffset // Apply scroll offset
+              // Position items with calculated spacing
+              const x = startX + col * spacingX
+              const y = startY - row * spacingY + scrollOffset // Apply scroll offset
             
             // Check if item (including label) is within content bounds
             const itemHalfSize = itemSize / 2
