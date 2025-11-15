@@ -52,7 +52,7 @@ export default function LandingPage({ onEnterAR, onEnterDefaultView }: LandingPa
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5, delay: 0.2 }}
           >
-            <span className="nav-logo-icon"></span>
+            <img src="/logo.png" alt="DecoratAR Logo" className="nav-logo-icon" />
             <span className="nav-logo-text">DecoratAR</span>
           </motion.div>
           <motion.div

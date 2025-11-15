@@ -53,7 +53,9 @@
 }
 
 .nav-logo-icon {
-  font-size: 24px;
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
   animation: float 3s ease-in-out infinite;
 }
 
@@ -818,7 +820,8 @@
   }
 
   .nav-logo-icon {
-    font-size: 20px;
+    width: 20px;
+    height: 20px;
   }
 
   .nav-ar-button {
