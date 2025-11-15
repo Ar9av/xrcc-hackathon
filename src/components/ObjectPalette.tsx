@@ -170,6 +170,21 @@ function PalettePanel({ visible, onSelectTv, onSelectBed, onSelectSofa, onSelect
     if (visible && !positioned.current) {
       const camera = state.camera
 
+      // ====================================================================
+      // CRITICAL: Palette Position Logic - DO NOT MODIFY
+      // ====================================================================
+      // This logic was fixed in commit 5730835 to work around a WebXR bug
+      // where camera.getWorldDirection() returns incorrect directions due to
+      // stale quaternion data (Three.js issues #19891, #16382, #19084).
+      //
+      // The fix: Extract forward vector directly from camera.matrixWorld
+      // instead of using camera.getWorldDirection().
+      //
+      // DO NOT change this logic without understanding the WebXR bug and
+      // testing thoroughly. Any changes to the forward vector calculation
+      // (lines 194, 198-206) will break AR palette positioning.
+      // ====================================================================
+
       // Get head position from matrixWorld
       const position = headPos.setFromMatrixPosition(camera.matrixWorld)
       // console.log('Head position:', position.toArray())
