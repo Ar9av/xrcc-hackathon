@@ -58,6 +58,7 @@ interface SceneProps {
   onSelectRoundTable: () => void
   onTogglePalette: () => void
   onExitDrawMode: () => void
+  onClosePalette: () => void
 }
 
 /**
@@ -85,7 +86,8 @@ function Scene({
   onSelectSofa,
   onSelectRoundTable,
   onTogglePalette,
-  onExitDrawMode
+  onExitDrawMode,
+  onClosePalette
 }: SceneProps) {
   // Detect XR mode to conditionally render AR or VR components
   const { mode } = useXR()
@@ -103,6 +105,8 @@ function Scene({
             selectedObjectType={selectedObjectType}
             onExitDrawMode={onExitDrawMode}
             isPaletteVisible={isPaletteVisible}
+            onDeselectObject={() => {}} // Deselection handled internally
+            onClosePalette={onClosePalette}
           />
           <ObjectPalette
             isVisible={isPaletteVisible}
@@ -171,6 +175,11 @@ function App() {
 
       return newVisibility
     })
+  }
+
+  const handleClosePalette = () => {
+    console.log('Closing palette')
+    setIsPaletteVisible(false)
   }
 
   const handleSelectTv = () => {
@@ -278,6 +287,7 @@ function App() {
             onSelectRoundTable={handleSelectRoundTable}
             onTogglePalette={handleTogglePalette}
             onExitDrawMode={handleExitDrawMode}
+            onClosePalette={handleClosePalette}
           />
         </XR>
       </Canvas>

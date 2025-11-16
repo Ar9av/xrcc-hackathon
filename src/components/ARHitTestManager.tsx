@@ -30,9 +30,11 @@ interface ARHitTestManagerProps {
   selectedObjectType: 'tv' | 'bed' | 'sofa' | 'round-table' | null
   onExitDrawMode: () => void
   isPaletteVisible: boolean
+  onDeselectObject?: () => void  // Callback to deselect objects when palette opens
+  onClosePalette?: () => void  // Callback to close palette when clicking in world
 }
 
-export function ARHitTestManager({ isDrawMode, selectedObjectType, onExitDrawMode, isPaletteVisible }: ARHitTestManagerProps) {
+export function ARHitTestManager({ isDrawMode, selectedObjectType, onExitDrawMode, isPaletteVisible, onDeselectObject, onClosePalette }: ARHitTestManagerProps) {
   const { session } = useXR()
   const xrRefSpaceRef = useRef<XRReferenceSpace | null>(null)
   const hitTestSourceRef = useRef<XRHitTestSource | null>(null)
@@ -130,6 +132,8 @@ export function ARHitTestManager({ isDrawMode, selectedObjectType, onExitDrawMod
         selectedObjectType={selectedObjectType}
         onExitDrawMode={onExitDrawMode}
         isPaletteVisible={isPaletteVisible}
+        onDeselectObject={onDeselectObject}
+        onClosePalette={onClosePalette}
       />
     </>
   )
@@ -235,12 +239,14 @@ interface PlacementHandlerProps {
   selectedObjectType: 'tv' | 'bed' | 'sofa' | 'round-table' | null
   onExitDrawMode: () => void
   isPaletteVisible: boolean
+  onDeselectObject?: () => void
+  onClosePalette?: () => void
 }
 
 // Feature 4.2: Transform mode type
 type TransformMode = 'rotate' | 'scale' | 'move'
 
-function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectType, onExitDrawMode, isPaletteVisible }: PlacementHandlerProps) {
+function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectType, onExitDrawMode, isPaletteVisible, onDeselectObject, onClosePalette }: PlacementHandlerProps) {
   const { session } = useXR()
   const [anchoredObjects, setAnchoredObjects] = useState<Array<{
     id: string
@@ -254,6 +260,15 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
   // Feature 4.1: Selection state
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null)
   const objectClickedRef = useRef(false)
+
+  // Deselect object when palette opens
+  useEffect(() => {
+    if (isPaletteVisible && selectedObjectId) {
+      console.log('Palette opened - deselecting object')
+      setSelectedObjectId(null)
+      onDeselectObject?.()
+    }
+  }, [isPaletteVisible])
 
   // Feature 4.2: Transform mode state (default is rotate)
   const [transformMode, setTransformMode] = useState<TransformMode>('rotate')
@@ -334,6 +349,13 @@ function PlacementHandler({ hitResult, xrRefSpace, isDrawMode, selectedObjectTyp
     if (!session) return
 
     const onSelect = () => {
+      // Close palette if open and clicked anywhere (empty space or object)
+      if (isPaletteVisible) {
+        console.log('Palette open - closing palette')
+        onClosePalette?.()
+        // Don't return here - still need to handle object selection if clicking on object
+      }
+
       // Feature 4.1: Handle deselection (clicked empty space)
       if (!objectClickedRef.current && selectedObjectId) {
         console.log('Deselecting - clicked empty space')

@@ -393,10 +393,13 @@ function PalettePanel({ visible, onSelectTv, onSelectBed, onSelectSofa, onSelect
     }
   }, [panelWidth, panelHeight, navWidth, contentWidth, cornerRadius])
 
+  // Don't render at all when not visible - prevents raycasting issues
+  if (!visible) return null
+
   return (
     <>
-      {/* Palette UI - hide with visible prop instead of returning null to ensure cleanup */}
-      <group ref={groupRef} visible={visible}>
+      {/* Palette UI */}
+      <group ref={groupRef}>
         {/* Shadow/Depth effect behind panel */}
         <mesh position={[0, -0.005, -0.01]} renderOrder={0}>
           <planeGeometry args={[panelWidth + 0.02, panelHeight + 0.02]} />
