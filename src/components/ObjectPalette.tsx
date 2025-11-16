@@ -34,22 +34,22 @@ const furnitureData: FurnitureItem[] = [
   { id: 'sofa', name: 'Sofa', category: 'bed', image: '/asset/images/sofa.png', hasModel: true, modelPath: '/asset/sofa.glb' },
   { id: 'mattress', name: 'Mattress', category: 'bed', image: '/asset/images/mattress.png', hasModel: false },
   { id: 'bunk-bed', name: 'Bunk Bed', category: 'bed', image: '/asset/images/bunk-bed.png', hasModel: false },
-  
+
   // Table category
   { id: 'round-table', name: 'Round Table', category: 'table', image: '/asset/images/round-table.png', hasModel: true, modelPath: '/asset/round-table.glb' },
-  { id: 'table', name: 'Dining Table', category: 'table', image: '/asset/images/table.png', hasModel: true, modelPath: '/asset/s/table.glb' },
+  { id: 'tv', name: 'TV', category: 'appliances', image: '/asset/images/tv.png', hasModel: true, modelPath: '/asset/tv.glb' },
   { id: 'coffee-table', name: 'Coffee Table', category: 'table', image: '/asset/images/coffee-table.png', hasModel: false },
   { id: 'desk', name: 'Desk', category: 'table', image: '/asset/images/desk.png', hasModel: false },
   { id: 'side-table', name: 'Side Table', category: 'table', image: '/asset/images/table.png', hasModel: false },
-  
+  { id: 'table', name: 'Dining Table', category: 'table', image: '/asset/images/table.png', hasModel: false },
+
   // Wardrobe category
   { id: 'wardrobe-1', name: 'Modern Wardrobe', category: 'wardrobe', image: '/asset/images/bed.png', hasModel: false },
   { id: 'wardrobe-2', name: 'Classic Wardrobe', category: 'wardrobe', image: '/asset/images/bed.png', hasModel: false },
   { id: 'closet', name: 'Closet', category: 'wardrobe', image: '/asset/images/bed.png', hasModel: false },
   { id: 'dresser', name: 'Dresser', category: 'wardrobe', image: '/asset/images/bed.png', hasModel: false },
-  
-  // Appliances category
-  { id: 'tv', name: 'TV', category: 'appliances', image: '/asset/images/tv.png', hasModel: true, modelPath: '/asset/tv.glb' },
+
+  // Appliances category - TV appears here too (duplicate entry for category filtering)
   { id: 'refrigerator', name: 'Refrigerator', category: 'appliances', image: '/asset/images/tv.png', hasModel: false },
   { id: 'microwave', name: 'Microwave', category: 'appliances', image: '/asset/images/tv.png', hasModel: false },
   { id: 'washing-machine', name: 'Washing Machine', category: 'appliances', image: '/asset/images/tv.png', hasModel: false },
@@ -165,6 +165,10 @@ function PalettePanel({ visible, onSelectTv, onSelectBed, onSelectSofa, onSelect
   useFrame((state) => {
     const panel = groupRef.current
     if (!panel || !visible) return
+
+    // Disable frustum culling to prevent rendering issues with transparent materials
+    // when looking away from the palette (WebXR transparency + culling bug)
+    panel.frustumCulled = false
 
     // Position ONCE when visible becomes true, then keep it anchored
     if (visible && !positioned.current) {
@@ -379,30 +383,30 @@ function PalettePanel({ visible, onSelectTv, onSelectBed, onSelectSofa, onSelect
       {/* Palette UI - hide with visible prop instead of returning null to ensure cleanup */}
       <group ref={groupRef} visible={visible}>
         {/* Shadow/Depth effect behind panel */}
-        <mesh position={[0, -0.005, -0.01]}>
+        <mesh position={[0, -0.005, -0.01]} renderOrder={0}>
           <planeGeometry args={[panelWidth + 0.02, panelHeight + 0.02]} />
-          <meshBasicMaterial color="#000000" opacity={0.3} transparent />
+          <meshBasicMaterial color="#000000" opacity={0.3} transparent depthWrite={false} />
         </mesh>
 
         {/* Main panel background with rounded corners and subtle gradient effect */}
-        <mesh position={[0, 0, 0]} geometry={mainPanelGeometry}>
-          <meshBasicMaterial color="#2a2a2a" opacity={0.98} transparent />
+        <mesh position={[0, 0, 0]} geometry={mainPanelGeometry} renderOrder={1}>
+          <meshBasicMaterial color="#2a2a2a" opacity={0.98} transparent depthWrite={false} />
         </mesh>
 
         {/* Border/Outline for main panel */}
-        <lineSegments geometry={new EdgesGeometry(mainPanelGeometry)}>
-          <lineBasicMaterial color="#3a3a3a" opacity={0.5} transparent />
+        <lineSegments geometry={new EdgesGeometry(mainPanelGeometry)} renderOrder={2}>
+          <lineBasicMaterial color="#3a3a3a" opacity={0.5} transparent depthWrite={false} />
         </lineSegments>
 
         {/* Left Navigation Panel Background with rounded corners */}
-        <mesh position={[-(panelWidth - navWidth) / 2, 0, 0.002]} geometry={navPanelGeometry}>
-          <meshBasicMaterial color="#1a1a1a" opacity={0.98} transparent />
+        <mesh position={[-(panelWidth - navWidth) / 2, 0, 0.002]} geometry={navPanelGeometry} renderOrder={3}>
+          <meshBasicMaterial color="#1a1a1a" opacity={0.98} transparent depthWrite={false} />
         </mesh>
 
         {/* Divider line between nav and content */}
-        <mesh position={[-(panelWidth - navWidth) / 2 + navWidth / 2, 0, 0.003]}>
+        <mesh position={[-(panelWidth - navWidth) / 2 + navWidth / 2, 0, 0.003]} renderOrder={4}>
           <planeGeometry args={[0.002, panelHeight]} />
-          <meshBasicMaterial color="#3a3a3a" opacity={0.6} transparent />
+          <meshBasicMaterial color="#3a3a3a" opacity={0.6} transparent depthWrite={false} />
         </mesh>
 
         {/* Navigation Title with underline */}
@@ -419,41 +423,38 @@ function PalettePanel({ visible, onSelectTv, onSelectBed, onSelectSofa, onSelect
           Furniture
         </Text>
         {/* Title underline */}
-        <mesh position={[-(panelWidth - navWidth) / 2, panelHeight / 2 - 0.16, 0.01]}>
+        <mesh position={[-(panelWidth - navWidth) / 2, panelHeight / 2 - 0.16, 0.01]} renderOrder={5}>
           <planeGeometry args={[navWidth - 0.1, 0.003]} />
-          <meshBasicMaterial color="#4a90e2" opacity={0.8} transparent />
+          <meshBasicMaterial color="#4a90e2" opacity={0.8} transparent depthWrite={false} />
         </mesh>
 
         {/* Category Navigation Buttons */}
         {(['all', 'bed', 'table', 'wardrobe', 'appliances'] as Category[]).map((category, index) => {
           const isActive = selectedCategory === category
           const yPos = panelHeight / 2 - 0.25 - index * 0.12
-          
+
           return (
             <group key={category} position={[-(panelWidth - navWidth) / 2, yPos, 0.01]}>
               {/* Category button background with rounded corners */}
               <mesh
+                renderOrder={6}
+                pointerEventsType={{ deny: 'gaze' }}
                 onClick={() => setSelectedCategory(category)}
                 onPointerOver={() => setHoveredCategory(category)}
                 onPointerOut={() => setHoveredCategory(null)}
               >
                 <shapeGeometry args={[createRoundedRect(navWidth - 0.05, 0.08, 0.015)]} />
-                <meshBasicMaterial 
+                <meshBasicMaterial
                   color={isActive ? "#4a90e2" : hoveredCategory === category ? "#3a3a3a" : "transparent"}
                   opacity={isActive ? 0.8 : hoveredCategory === category ? 0.5 : 0}
                   transparent
+                  depthWrite={false}
                 />
               </mesh>
-              {/* Active indicator dot - more prominent */}
-              {isActive && (
-                <mesh position={[navWidth / 2 - 0.08, 0, 0.002]}>
-                  <circleGeometry args={[0.012, 16]} />
-                  <meshBasicMaterial color="#ffd700" />
-                </mesh>
-              )}
               {/* Category label */}
               <Text
                 position={[0, 0, 0.003]}
+                renderOrder={8}
                 fontSize={0.036}
                 color={isActive ? "#ffffff" : "#cccccc"}
                 anchorX="center"
@@ -471,8 +472,8 @@ function PalettePanel({ visible, onSelectTv, onSelectBed, onSelectSofa, onSelect
         {/* Right Content Area - Furniture Grid */}
         <group position={[(panelWidth - contentWidth) / 2, 0, 0.01]}>
           {/* Content background with rounded corners */}
-          <mesh position={[0, 0, 0.001]} geometry={contentPanelGeometry}>
-            <meshBasicMaterial color="#2a2a2a" opacity={0.98} transparent />
+          <mesh position={[0, 0, 0.001]} geometry={contentPanelGeometry} renderOrder={3}>
+            <meshBasicMaterial color="#2a2a2a" opacity={0.98} transparent depthWrite={false} />
           </mesh>
 
           {/* Furniture items grid - with scrolling */}
@@ -523,6 +524,8 @@ function PalettePanel({ visible, onSelectTv, onSelectBed, onSelectSofa, onSelect
               <group key={item.id} position={[x, y, 0]}>
                 {/* Item button background with rounded corners */}
                 <mesh
+                  renderOrder={9}
+                  pointerEventsType={{ deny: 'gaze' }}
                   onClick={() => handleItemClick(item)}
                   onPointerOver={() => setHoveredItems(prev => new Set(prev).add(item.id))}
                   onPointerOut={() => setHoveredItems(prev => {
@@ -532,51 +535,56 @@ function PalettePanel({ visible, onSelectTv, onSelectBed, onSelectSofa, onSelect
                   })}
                   geometry={itemButtonGeometry}
                 >
-                  <meshBasicMaterial 
+                  <meshBasicMaterial
                     color={isHovered && !isLocked ? "#4a90e2" : isLocked ? "#1a1a1a" : "#2a2a2a"}
                     opacity={isLocked ? 0.4 : isHovered ? 0.8 : 0.6}
                     transparent
+                    depthWrite={false}
                   />
                 </mesh>
-                
+
                 {/* Item button border */}
                 {!isLocked && (
-                  <lineSegments geometry={new EdgesGeometry(itemButtonGeometry)}>
-                    <lineBasicMaterial 
-                      color={isHovered ? "#6ab0ff" : "#3a3a3a"} 
-                      opacity={isHovered ? 0.8 : 0.4} 
-                      transparent 
+                  <lineSegments geometry={new EdgesGeometry(itemButtonGeometry)} renderOrder={10}>
+                    <lineBasicMaterial
+                      color={isHovered ? "#6ab0ff" : "#3a3a3a"}
+                      opacity={isHovered ? 0.8 : 0.4}
+                      transparent
+                      depthWrite={false}
                     />
                   </lineSegments>
                 )}
-                
+
                 {/* Item icon with rounded background */}
                 {texture && (
                   <group position={[0, 0, 0.002]}>
                     {/* Icon background */}
-                    <mesh>
+                    <mesh renderOrder={11}>
                       <shapeGeometry args={[createRoundedRect(itemSize * 0.9, itemSize * 0.9, 0.01)]} />
-                      <meshBasicMaterial 
-                        color="#1a1a1a" 
-                        opacity={0.7} 
-                        transparent 
+                      <meshBasicMaterial
+                        color="#1a1a1a"
+                        opacity={0.7}
+                        transparent
+                        depthWrite={false}
                       />
                     </mesh>
                     {/* Icon - much larger */}
-                    <mesh position={[0, 0, 0.001]}>
+                    <mesh position={[0, 0, 0.001]} renderOrder={12}>
                       <planeGeometry args={[itemSize * 0.85, itemSize * 0.85]} />
-                      <meshBasicMaterial 
+                      <meshBasicMaterial
                         map={texture}
                         transparent
                         opacity={isLocked ? 0.3 : isHovered ? 1.0 : 0.95}
+                        depthWrite={false}
                       />
                     </mesh>
                   </group>
                 )}
-                
+
                 {/* Item label with more spacing */}
                 <Text
                   position={[0, -itemSize / 2 - labelGap - labelHeight / 2, 0.003]}
+                  renderOrder={13}
                   fontSize={0.026}
                   color={isLocked ? "#666666" : isHovered ? "#ffffff" : "#cccccc"}
                   anchorX="center"
