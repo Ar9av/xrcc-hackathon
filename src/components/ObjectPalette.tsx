@@ -49,11 +49,11 @@ const furnitureData: FurnitureItem[] = [
   { id: 'closet', name: 'Closet', category: 'wardrobe', image: '/asset/images/bed.png', hasModel: false },
   { id: 'dresser', name: 'Dresser', category: 'wardrobe', image: '/asset/images/bed.png', hasModel: false },
 
-  // Appliances category - TV appears here too (duplicate entry for category filtering)
-  { id: 'refrigerator', name: 'Refrigerator', category: 'appliances', image: '/asset/images/tv.png', hasModel: false },
-  { id: 'microwave', name: 'Microwave', category: 'appliances', image: '/asset/images/tv.png', hasModel: false },
-  { id: 'washing-machine', name: 'Washing Machine', category: 'appliances', image: '/asset/images/tv.png', hasModel: false },
-  { id: 'dishwasher', name: 'Dishwasher', category: 'appliances', image: '/asset/images/tv.png', hasModel: false },
+  // Appliances category - TV appears here too (shows in both All and Appliances categories)
+  { id: 'refrigerator', name: 'Refrigerator', category: 'appliances', image: '/asset/images/refrigerator.png', hasModel: false },
+  { id: 'microwave', name: 'Microwave', category: 'appliances', image: '/asset/images/microwave.png', hasModel: false },
+  { id: 'washing-machine', name: 'Washing Machine', category: 'appliances', image: '/asset/images/washing-machine.png', hasModel: false },
+  { id: 'dishwasher', name: 'Dishwasher', category: 'appliances', image: '/asset/images/dishwasher.png', hasModel: false },
 ]
 
 type Category = 'all' | 'bed' | 'table' | 'wardrobe' | 'appliances'
@@ -173,6 +173,21 @@ function PalettePanel({ visible, onSelectTv, onSelectBed, onSelectSofa, onSelect
     // Position ONCE when visible becomes true, then keep it anchored
     if (visible && !positioned.current) {
       const camera = state.camera
+
+      // ====================================================================
+      // CRITICAL: Palette Position Logic - DO NOT MODIFY
+      // ====================================================================
+      // This logic was fixed in commit 5730835 to work around a WebXR bug
+      // where camera.getWorldDirection() returns incorrect directions due to
+      // stale quaternion data (Three.js issues #19891, #16382, #19084).
+      //
+      // The fix: Extract forward vector directly from camera.matrixWorld
+      // instead of using camera.getWorldDirection().
+      //
+      // DO NOT change this logic without understanding the WebXR bug and
+      // testing thoroughly. Any changes to the forward vector calculation
+      // (lines 194, 198-206) will break AR palette positioning.
+      // ====================================================================
 
       // Get head position from matrixWorld
       const position = headPos.setFromMatrixPosition(camera.matrixWorld)

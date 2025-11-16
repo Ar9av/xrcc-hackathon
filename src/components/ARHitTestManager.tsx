@@ -1370,6 +1370,8 @@ function ControllerTooltips({ isPaletteVisible, isDrawMode, selectedObjectId, tr
   const leftTooltipRef = useRef<THREE.Group>(null)
   const rightTooltipRef = useRef<THREE.Group>(null)
   const { camera } = useThree()
+  const { mode } = useXR()
+  const isInXR = mode === 'immersive-ar'
 
   // Determine tooltip text based on state
   const getTooltipText = (hand: 'left' | 'right'): string | null => {
@@ -1472,37 +1474,59 @@ function ControllerTooltips({ isPaletteVisible, isDrawMode, selectedObjectId, tr
     return shape
   }
 
-  // Position tooltips relative to controllers
+  // Position tooltips relative to controllers or in front of camera if controllers not available
   useFrame(() => {
-    if (leftController?.object && leftTooltipRef.current && leftText) {
-      // Get controller world position
-      const controllerPos = new THREE.Vector3()
-      leftController.object.getWorldPosition(controllerPos)
-      
-      // Position tooltip above controller (offset upward and slightly forward)
-      leftTooltipRef.current.position.copy(controllerPos)
-      leftTooltipRef.current.position.y += 0.15  // 15cm above controller
+    if (leftTooltipRef.current && leftText) {
+      if (leftController?.object) {
+        // Get controller world position
+        const controllerPos = new THREE.Vector3()
+        leftController.object.getWorldPosition(controllerPos)
+        
+        // Position tooltip above controller (offset upward and slightly forward)
+        leftTooltipRef.current.position.copy(controllerPos)
+        leftTooltipRef.current.position.y += 0.15  // 15cm above controller
+      } else if (isInXR) {
+        // Default position in front of camera when in XR but controllers not detected
+        const forward = new THREE.Vector3(0, 0, -1)
+        forward.applyQuaternion(camera.quaternion)
+        leftTooltipRef.current.position.copy(camera.position)
+        leftTooltipRef.current.position.add(forward.multiplyScalar(0.5)) // 50cm in front
+        leftTooltipRef.current.position.y -= 0.2 // Slightly below eye level
+      }
       
       // Make tooltip face camera (billboard effect)
-      leftTooltipRef.current.lookAt(camera.position)
+      if (isInXR) {
+        leftTooltipRef.current.lookAt(camera.position)
+      }
     }
 
-    if (rightController?.object && rightTooltipRef.current && rightText) {
-      const controllerPos = new THREE.Vector3()
-      rightController.object.getWorldPosition(controllerPos)
-      
-      rightTooltipRef.current.position.copy(controllerPos)
-      rightTooltipRef.current.position.y += 0.15
+    if (rightTooltipRef.current && rightText) {
+      if (rightController?.object) {
+        const controllerPos = new THREE.Vector3()
+        rightController.object.getWorldPosition(controllerPos)
+        
+        rightTooltipRef.current.position.copy(controllerPos)
+        rightTooltipRef.current.position.y += 0.15
+      } else if (isInXR) {
+        // Default position in front of camera when in XR but controllers not detected
+        const forward = new THREE.Vector3(0, 0, -1)
+        forward.applyQuaternion(camera.quaternion)
+        rightTooltipRef.current.position.copy(camera.position)
+        rightTooltipRef.current.position.add(forward.multiplyScalar(0.5)) // 50cm in front
+        rightTooltipRef.current.position.y -= 0.2 // Slightly below eye level
+      }
       
       // Make tooltip face camera (billboard effect)
-      rightTooltipRef.current.lookAt(camera.position)
+      if (isInXR) {
+        rightTooltipRef.current.lookAt(camera.position)
+      }
     }
   })
 
   return (
     <>
       {leftText && (
-        <group ref={leftTooltipRef} visible={!!leftController?.object}>
+        <group ref={leftTooltipRef} visible={isInXR}>
           {/* Chip-shaped background */}
           <mesh position={[0, 0, -0.01]}>
             <shapeGeometry args={[createChipShape(leftBgSize[0], leftBgSize[1], 0.01)]} />
@@ -1523,7 +1547,7 @@ function ControllerTooltips({ isPaletteVisible, isDrawMode, selectedObjectId, tr
         </group>
       )}
       {rightText && (
-        <group ref={rightTooltipRef} visible={!!rightController?.object}>
+        <group ref={rightTooltipRef} visible={isInXR}>
           {/* Chip-shaped background */}
           <mesh position={[0, 0, -0.01]}>
             <shapeGeometry args={[createChipShape(rightBgSize[0], rightBgSize[1], 0.01)]} />

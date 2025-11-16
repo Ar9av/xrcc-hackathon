@@ -129,8 +129,17 @@ function Scene({
       <ambientLight intensity={0.5} />
       <directionalLight position={[10, 10, 5]} intensity={1} />
 
-      {/* Grid helper for better spatial awareness - 50x50 grid, 1 unit cells */}
-      {ENABLE_GRID_HELPER && <gridHelper args={[50, 50, 'gray', 'darkgray']} position={[0, 0.01, 0]} />}
+      {/* Ground plane - only visible in desktop mode (not AR) */}
+      {mode !== 'immersive-ar' && (
+        <>
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
+            <planeGeometry args={[50, 50]} />
+            <meshStandardMaterial color="#888888" />
+          </mesh>
+          {/* Grid helper for better spatial awareness - 50x50 grid, 1 unit cells */}
+          {ENABLE_GRID_HELPER && <gridHelper args={[50, 50, 'gray', 'darkgray']} position={[0, 0.01, 0]} />}
+        </>
+      )}
 
       {/* Orbit controls only active in non-XR mode (desktop viewing) */}
       <OrbitControls />

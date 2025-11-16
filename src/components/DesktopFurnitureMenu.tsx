@@ -15,8 +15,8 @@ const furnitureData: FurnitureItem[] = [
   // Bed category
   { id: 'bed', name: 'Bed', category: 'bed', image: '/asset/images/bed.png', hasModel: true, modelPath: '/asset/bed.glb' },
   { id: 'sofa', name: 'Sofa', category: 'bed', image: '/asset/images/sofa.png', hasModel: true, modelPath: '/asset/sofa.glb' },
-  { id: 'mattress', name: 'Mattress', category: 'bed', image: '/asset/images/bed.png', hasModel: false },
-  { id: 'bunk-bed', name: 'Bunk Bed', category: 'bed', image: '/asset/images/bed.png', hasModel: false },
+  { id: 'mattress', name: 'Mattress', category: 'bed', image: '/asset/images/mattress.png', hasModel: false },
+  { id: 'bunk-bed', name: 'Bunk Bed', category: 'bed', image: '/asset/images/bunk-bed.png', hasModel: false },
   
   // Table category
   { id: 'round-table', name: 'Round Table', category: 'table', image: '/asset/images/round-table.png', hasModel: true, modelPath: '/asset/round-table.glb' },
@@ -33,10 +33,10 @@ const furnitureData: FurnitureItem[] = [
   
   // Appliances category
   { id: 'tv', name: 'TV', category: 'appliances', image: '/asset/images/tv.png', hasModel: true, modelPath: '/asset/tv.glb' },
-  { id: 'refrigerator', name: 'Refrigerator', category: 'appliances', image: '/asset/images/tv.png', hasModel: false },
-  { id: 'microwave', name: 'Microwave', category: 'appliances', image: '/asset/images/tv.png', hasModel: false },
-  { id: 'washing-machine', name: 'Washing Machine', category: 'appliances', image: '/asset/images/tv.png', hasModel: false },
-  { id: 'dishwasher', name: 'Dishwasher', category: 'appliances', image: '/asset/images/tv.png', hasModel: false },
+  { id: 'refrigerator', name: 'Refrigerator', category: 'appliances', image: '/asset/images/refrigerator.png', hasModel: false },
+  { id: 'microwave', name: 'Microwave', category: 'appliances', image: '/asset/images/microwave.png', hasModel: false },
+  { id: 'washing-machine', name: 'Washing Machine', category: 'appliances', image: '/asset/images/washing-machine.png', hasModel: false },
+  { id: 'dishwasher', name: 'Dishwasher', category: 'appliances', image: '/asset/images/dishwasher.png', hasModel: false },
 ]
 
 type Category = 'all' | 'bed' | 'table' | 'wardrobe' | 'appliances'
