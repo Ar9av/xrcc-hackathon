@@ -1401,21 +1401,21 @@ function ControllerTooltips({ isPaletteVisible, isDrawMode, selectedObjectId, tr
     if (selectedObjectId) {
       if (transformMode === 'rotate') {
         if (hand === 'left') {
-          return 'Thumb stick left/right - rotate\nY - open object palette'
+          return 'Thumb stick ←/→ - rotate\n\nY - open object menu\n\nPoint away + LT - deselect'
         } else {
-          return 'Thumb stick left/right - rotate\nA - toggle mode\nB - delete object'
+          return 'Thumb stick ←/→ - rotate\n\nA - toggle edit mode\nB - delete object\n\nPoint away + RT - deselect'
         }
       } else if (transformMode === 'scale') {
         if (hand === 'left') {
-          return 'Thumb stick forward - increase size\nThumb stick back - decrease size\nY - open object palette'
+          return 'Thumb stick up - increase size\nThumb stick down - decrease size\n\nY - open object menu\n\nPoint away + LT - deselect'
         } else {
-          return 'Thumb stick forward - increase size\nThumb stick back - decrease size\nA - toggle mode\nB - delete object'
+          return 'Thumb stick up - increase size\nThumb stick down - decrease size\n\nA - toggle mode\nB - delete object\n\nPoint away + RT - deselect'
         }
       } else if (transformMode === 'move') {
         if (hand === 'left') {
-          return 'Grip hold + drag - move object\nY - open object palette'
+          return 'Grip hold + drag - move object\n\nY - open object menu\n\nPoint away + LT - deselect'
         } else {
-          return 'Grip hold + drag - move object\nA - toggle mode\nB - delete object'
+          return 'Grip hold + drag - move object\n\nA - toggle mode\nB - delete object\n\nPoint away + RT - deselect'
         }
       }
     }
@@ -1423,9 +1423,9 @@ function ControllerTooltips({ isPaletteVisible, isDrawMode, selectedObjectId, tr
     // Palette open state
     if (isPaletteVisible) {
       if (hand === 'left') {
-        return 'LT - select object'
+        return 'Point + LT - select object\nY - close object menu'
       } else {
-        return 'RT - select object'
+        return 'Point + RT - select object'
       }
     }
 
@@ -1440,9 +1440,9 @@ function ControllerTooltips({ isPaletteVisible, isDrawMode, selectedObjectId, tr
 
     // Default state
     if (hand === 'left') {
-      return 'Y - open object palette'
+      return 'Y - open object menu\nPoint + LT - select object'
     } else {
-      return null  // No tooltip for right controller in default state
+      return 'Point + RT - select object'
     }
   }
 
