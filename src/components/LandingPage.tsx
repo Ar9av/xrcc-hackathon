@@ -165,6 +165,42 @@ export default function LandingPage({ onEnterAR, onEnterDefaultView }: LandingPa
           </motion.div>
         </div>
       </section>
+
+      {/* Demo Video Section */}
+      <section className="demo-video-section">
+        <div className="section-container">
+          <motion.div
+            className="section-header"
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.8 }}
+          >
+            <h2 className="section-title">See It In Action</h2>
+            <p className="section-subtitle">
+              Watch how DecoratAR transforms empty spaces into beautifully staged rooms in minutes
+            </p>
+          </motion.div>
+
+          <motion.div
+            className="video-container"
+            initial={{ opacity: 0, scale: 0.95 }}
+            whileInView={{ opacity: 1, scale: 1 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.8, delay: 0.2 }}
+          >
+            <div className="video-wrapper">
+              <iframe
+                src="https://www.youtube.com/embed/lUaQ69v4qDQ"
+                title="DecoratAR Demo Video"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+                className="demo-video"
+              />
+            </div>
+          </motion.div>
+        </div>
+      </section>
     </div>
   )
 }
