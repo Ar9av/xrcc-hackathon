@@ -815,7 +815,7 @@ function RotateDebugVectors({ objectRef, anchor, xrRefSpace }: RotateDebugVector
  * Cone: 1m tall, 0.1m radius (20cm diameter), light green, tip pointing down (180° rotated).
  *
  * Torus: Dynamic sizing and positioning based on scale value.
- *   - Tube radius: 5cm (constant)
+ *   - Tube radius: 2.5cm (constant)
  *   - Main radius: innerRadius + tubeRadius (distance from center to tube center)
  *   - Inner diameter formula: distanceFromTip * (cone_diameter / cone_height)
  *   - Position: accounts for cone rotation (yPos = distanceFromTip - 0.5)
@@ -870,9 +870,9 @@ function ScaleSlider({ objectRef, anchor, xrRefSpace, type, scale, baseScale }: 
     const innerDiameter = distanceFromTip * (coneDiameter / coneHeight)
     const innerRadius = innerDiameter / 2
 
-    // Torus parameters: 5cm tube radius (constant), main radius = innerRadius + tubeRadius
+    // Torus parameters: 2.5cm tube radius (constant), main radius = innerRadius + tubeRadius
     // TorusGeometry first param is distance from torus center to tube center
-    const tubeRadius = 0.05
+    const tubeRadius = 0.025
     const radius = Math.max(0.01, innerRadius + tubeRadius)  // Min to avoid degenerate geometry
 
     // Calculate Y position on cone (rotated 180° so tip at -0.5, base at +0.5)
@@ -928,7 +928,7 @@ function ScaleSlider({ objectRef, anchor, xrRefSpace, type, scale, baseScale }: 
 
       {/* Torus: dynamic radius and position, dark green, rotated 90° to align with cone */}
       <mesh position={[0, torusYPosition, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[torusRadius, 0.05, 16, 32]} />
+        <torusGeometry args={[torusRadius, 0.025, 16, 32]} />
         <meshBasicMaterial color="#006400" />
       </mesh>
     </group>
