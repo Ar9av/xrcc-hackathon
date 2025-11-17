@@ -4,7 +4,7 @@ A learning project to understand the basics of React Three Fiber (R3F) for XR (V
 
 ## Tech Stack
 
-- **React** - UI framework
+- **React** - UI framework 
 - **TypeScript** - Type safety
 - **Vite** - Build tool and dev server
 - **Three.js** - 3D graphics library
